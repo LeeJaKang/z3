@@ -36,6 +36,18 @@ namespace sat {
 
         m_max_memory  = megabytes_to_bytes(p.max_memory());
 
+        symbol a = p.sort_clauses();
+        if (a == symbol("random"))
+            m_sort_clauses = SC_RANDOM;
+        else if (a == symbol("ascending"))
+            m_sort_clauses = SC_ASCENDING;        
+        else if (a == symbol("descending"))
+            m_sort_clauses = SC_DESCENDING; 
+        else if (a == symbol("none"))
+            m_sort_clauses = SC_NONE;
+        else
+            throw sat_param_exception("invalid sort_clauses parameters");
+        
         symbol s = p.restart();
         if (s == symbol("luby"))
             m_restart = RS_LUBY;

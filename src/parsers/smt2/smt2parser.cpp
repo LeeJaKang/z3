@@ -16,6 +16,7 @@ Author:
 Revision History:
 
 --*/
+
 #include "util/stack.h"
 #include "ast/datatype_decl_plugin.h"
 #include "ast/bv_decl_plugin.h"
@@ -2903,6 +2904,7 @@ namespace smt2 {
             unsigned sym_spos   = m_symbol_stack.size();
             m_curr_cmd->set_line_pos(line, pos);
             m_curr_cmd->prepare(m_ctx);
+            
             while (true) {
                 if (curr_is_rparen()) {
                     if (arity != VAR_ARITY && i < arity)
@@ -2930,10 +2932,13 @@ namespace smt2 {
             }
         }
 
+        // 명령어를 하나씩 파싱함.
         void parse_cmd() {
             SASSERT(curr_is_lparen());
             int line = m_scanner.get_line();
             int pos  = m_scanner.get_pos();
+            //std::cout << "line: " << line << " position: " << pos << std::endl;
+
             next();
             check_identifier("invalid command, symbol expected");
             symbol s = curr_id();
@@ -3159,7 +3164,7 @@ namespace smt2 {
                     while (true) {
                         switch (curr()) {
                         case scanner::LEFT_PAREN:
-                            parse_cmd();
+                            parse_cmd(); // 이게 명령어를 파싱하는 부분임
                             break;
                         case scanner::EOF_TOKEN:
                             return found_errors == 0;
@@ -3192,6 +3197,9 @@ namespace smt2 {
                 catch (z3_exception & ex) {
                     error(ex.msg());
                 }
+
+
+
                 m_scanner.stop_caching();
                 if (m_curr_cmd)
                     m_curr_cmd->failure_cleanup(m_ctx);

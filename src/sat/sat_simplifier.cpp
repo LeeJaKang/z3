@@ -1915,6 +1915,7 @@ namespace sat {
         }
     }
 
+    // 이게 결국 큰 차이를 만든다.
     bool simplifier::try_eliminate(bool_var v) {
         if (value(v) != l_undef)
             return false;
@@ -2025,8 +2026,10 @@ namespace sat {
                 default:
                     if (m_new_cls.size() == 3)
                         s.m_stats.m_mk_ter_clause++;
-                    else
+                    else {
+                        //std::cout << "m_mk_cluase2 : " << s.m_stats.m_mk_clause << std::endl;
                         s.m_stats.m_mk_clause++;
+                    }
                     clause * new_c = s.alloc_clause(m_new_cls.size(), m_new_cls.data(), false);
 
                     if (s.m_config.m_drat) s.m_drat.add(*new_c, status::redundant());
@@ -2090,9 +2093,9 @@ namespace sat {
             if (is_external(v)) {
                 // skip
             }
-            else if (try_eliminate(v)) {
-                m_num_elim_vars++;
-            }
+            //else if (try_eliminate(v)) { // 이게 런타임 제일 증가시키는 주범이다.
+            //    m_num_elim_vars++;
+            //}
             else if (elim_vars_bdd_enabled() && elim_bdd(v)) { 
                 m_num_elim_vars++;
             }

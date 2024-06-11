@@ -304,6 +304,7 @@ static void parse_cmd_line_args(std::string& input_file, int argc, char ** argv)
                 exit(ERR_CMD_LINE);
             }
         }
+        // 옵션 parsing은 여기서 이루어짐.
         else if (argv[i][0] != '"' && (eq_pos = strchr(argv[i], '='))) {
             char * key   = argv[i];
             *eq_pos      = 0;

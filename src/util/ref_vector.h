@@ -266,6 +266,11 @@ public:
         SASSERT(&(this->m_manager) == &(other.m_manager));
         this->m_nodes.swap(other.m_nodes);
     }
+
+    // Added by JK.
+    void swap_elements(unsigned idx1, unsigned idx2) {
+        std::swap(this->m_nodes[idx1], this->m_nodes[idx2]);
+    }
     
     class element_ref {
         T * &       m_ref;

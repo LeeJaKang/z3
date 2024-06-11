@@ -18,6 +18,12 @@ Notes:
 --*/
 
 
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <random>
+#include <chrono>
+
 #include "util/gparams.h"
 #include "util/stacked_value.h"
 #include "ast/ast_pp.h"
@@ -45,6 +51,7 @@ Notes:
 #include "sat/tactic/sat2goal.h"
 #include "sat/tactic/sat_tactic.h"
 #include "sat/sat_simplifier_params.hpp"
+
 
 // incremental SAT solver.
 class inc_sat_solver : public solver {
@@ -83,6 +90,7 @@ class inc_sat_solver : public solver {
     typedef obj_map<expr, sat::literal> dep2asm_t;
 
     dep2asm_t          m_dep2asm;
+    bool m_first;
 
     bool is_internalized() const { return m_fmls_head == m_fmls.size(); }
 public:
@@ -99,7 +107,8 @@ public:
         m_num_scopes(0),
         m_unknown("no reason given"),
         m_internalized_converted(false), 
-        m_internalized_fmls(m) {
+        m_internalized_fmls(m),
+        m_first(false) {
         updt_params(p);
         m_mcs.push_back(nullptr);
         init_preprocess();
@@ -179,9 +188,38 @@ public:
             (m.is_not(e, e) && is_uninterp_const(e));
     }
 
+    void display_stats() {
+        sat::stats s = m_solver.get_stats();
+        std::cout << "m_mk_var: " << s.m_mk_var << std::endl;
+        std::cout << "m_mk_bin_clause: " << s.m_mk_bin_clause << std::endl;
+        std::cout << "m_mk_ter_clause: " << s.m_mk_ter_clause << std::endl;
+        std::cout << "m_mk_ter_learned: " << s.m_mk_ter_learned << std::endl;
+        std::cout << "m_mk_nary_clause: " << s.m_mk_clause << std::endl;
+        std::cout << "m_mk_nary_learned: " << s.m_mk_nary_learned << std::endl;
+        std::cout << "m_conflict: " << s.m_conflict << std::endl;
+        std::cout << "m_propagate: " << s.m_propagate << std::endl;
+        std::cout << "m_bin_propagate: " << s.m_bin_propagate << std::endl;
+        std::cout << "m_ter_propagate: " << s.m_ter_propagate << std::endl;
+        std::cout << "m_decision: " << s.m_decision << std::endl;
+        std::cout << "m_restart: " << s.m_restart << std::endl;
+        std::cout << "m_gc_clause: " << s.m_gc_clause << std::endl;
+        std::cout << "m_del_clause: " << s.m_del_clause << std::endl;
+        std::cout << "m_minimized_lits: " << s.m_minimized_lits << std::endl;
+        std::cout << "m_dyn_sub_res: " << s.m_dyn_sub_res << std::endl;
+        std::cout << "m_non_learned_generation: " << s.m_non_learned_generation << std::endl;
+        std::cout << "m_blocked_corr_sets: " << s.m_blocked_corr_sets << std::endl;
+        std::cout << "m_elim_var_res: " << s.m_elim_var_res << std::endl;
+        std::cout << "m_elim_var_bdd: " << s.m_elim_var_bdd << std::endl;
+        std::cout << "m_units: " << s.m_units << std::endl;
+        std::cout << "m_backtracks: " << s.m_backtracks << std::endl;
+        std::cout << "m_backjumps: " << s.m_backjumps << std::endl;
+        std::cout << std::endl;
+    }
+
     lbool check_sat_core(unsigned sz, expr * const * assumptions) override {
         m_solver.pop_to_base_level();
         m_core.reset();
+
         if (m_solver.inconsistent()) return l_false;
         expr_ref_vector _assumptions(m);
         obj_map<expr, expr*> asm2fml;
@@ -201,7 +239,77 @@ public:
 
         TRACE("sat", tout << _assumptions << "\n";);
         m_dep2asm.reset();
-        lbool r = internalize_formulas();
+
+        lbool r = internalize_formulas(); // m_fmls -> m_clauses
+
+        if (!m_first) {  
+            unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+            std::default_random_engine engine(seed);
+            m_first = true;
+
+            sat::config config = m_solver.get_config();
+            sat::sort_selection sort_method = config.m_sort_clauses;
+            std::uniform_int_distribution<int> distribution(0, 1);
+
+
+            if (sort_method != sat::sort_selection::SC_NONE) {
+                auto compare_clause_size = [sort_method, &engine, &distribution](const sat::clause* a, const sat::clause* b) {
+                    if (sort_method == sat::sort_selection::SC_ASCENDING) {
+                        return a->size() < b->size(); // 오름차순
+                    } else if (sort_method == sat::sort_selection::SC_DESCENDING) {
+                        return a->size() > b->size(); // 내림차순
+                    } else if (sort_method == sat::sort_selection::SC_RANDOM) {
+                        return distribution(engine) == 0; // 랜덤
+                    } else {
+                        return false;
+                    }
+                };
+            
+                sat::clause_vector& clauses = m_solver.clauses();
+                std::sort(clauses.begin(), clauses.end(), compare_clause_size); // clauses를 정렬하기.
+            }
+            // formula를 랜덤으로 바꾸기
+            //for (int i = m_fmls.size() - 1; i > 0; --i) {
+            //  expr_ref fml(m_fmls.get(i), m);
+            //  std::cout << "Init fml: " << fml << std::endl;
+            //  m_fmls.swap_elements(i, j);
+            //}
+
+            // clause를 랜덤으로 바꾸기
+            //for (int i = clauses.size() - 1; i > 0; --i) {
+            //    std::uniform_int_distribution<int> dist(0, i);
+            //    int j = dist(engine);
+
+            //    sat::clause clause = *clauses[i];
+            //    
+            //    unsigned int clause_size = clause.size();
+            //    std::cout << i << "th Cluases size: " << clause_size << std::endl;
+            //    std::cout << "Cluases: " << clause << std::endl;
+            //    //for(auto& lit : clause) {  
+            //    //    std::cout << "literal: " << lit << std::endl;
+            //    //}
+            //    //std::cout << std::endl;
+
+            //    //clauses.swap_elements(i, j);
+            //}
+
+            // clauses 출력하기
+            //for (int i = 0; i < clauses.size() ; i++) {
+            //    sat::clause* clause = clauses[i];
+            //
+            //    unsigned int clause_size = clause->size();
+            //    std::cout << i << " th Cluases size: " << clause_size << std::endl;
+            //    std::cout << "clauses: " << *clause << std::endl;
+            //    for(auto& lit : *clause) {
+            //        std::cout << lit << " ";
+            //    }
+            //    std::cout << std::endl;
+            //    std::cout << std::endl;
+            //}
+        }
+        //lbool r = internalize_formulas(); // m_fmls -> m_clauses
+		//display_stats();
+
         if (r != l_true) return r;
         r = internalize_assumptions(sz, _assumptions.data());
         if (r != l_true) return r;
@@ -349,9 +457,13 @@ public:
     }
 
     ast_manager& get_manager() const override { return m; }
+
     void assert_expr_core(expr * t) override {
         TRACE("goal2sat", tout << mk_pp(t, m) << "\n";);
         m_is_cnf &= is_clause(t);
+        //expr_ref ff(t, m);
+        //std::cout << "fml: " << ff << std::endl;
+        //std::cout << "fmls size: " << m_fmls.size() << std::endl; 
         m_fmls.push_back(t);
     }
     void set_produce_models(bool f) override {}
@@ -554,10 +666,12 @@ public:
 
     unsigned get_num_assertions() const override {
         const_cast<inc_sat_solver*>(this)->convert_internalized();
-        if (is_internalized() && m_internalized_converted) {            
+        if (is_internalized() && m_internalized_converted) {  
+            //std::cout << "case 1 ";           
             return m_internalized_fmls.size();
         }
         else {
+            //std::cout << "case 2 ";           
             return m_fmls.size();
         }
     }
@@ -770,12 +884,13 @@ private:
         m_pc = g->pc();
         m_mcs.set(m_mcs.size()-1, concat(m_mcs.back(), g->mc()));
         TRACE("sat", g->display_with_dependencies(tout););
-
         // ensure that if goal is already internalized, then import mc from m_solver.
 
-        m_goal2sat(*g, m_params, m_solver, m_map, m_dep2asm, is_incremental());
-
+        // std::cout << "m_clauses.size 1: " << this->m_solver.num_clauses() << std::endl;
+        m_goal2sat(*g, m_params, m_solver, m_map, m_dep2asm, is_incremental()); // m_fmls -> m_clauses
+        // std::cout << "m_clauses.size 2: " << this->m_solver.num_clauses() << std::endl;
         if (!m_sat_mc) m_sat_mc = alloc(sat2goal::mc, m);
+        
         m_sat_mc->flush_smc(m_solver, m_map);
         return check_uninterpreted();
     }
@@ -801,10 +916,11 @@ private:
         }
 
         goal_ref g = alloc(goal, m, true, true); // models and cores are enabled.
-        for (unsigned i = 0; i < sz; ++i) 
+        for (unsigned i = 0; i < sz; ++i)
             g->assert_expr(asms[i], m.mk_leaf(asms[i]));
         for (unsigned i = 0; i < get_num_assumptions(); ++i) 
             g->assert_expr(get_assumption(i), m.mk_leaf(get_assumption(i)));
+        
         lbool res = internalize_goal(g);
         if (res == l_true) 
             extract_assumptions(sz, asms);
@@ -941,7 +1057,6 @@ private:
             return l_true;
 
         lbool res;
-        
         if (m_is_cnf) {
             res = internalize_goal(m_fmls.size() - m_fmls_head, m_fmls.data() + m_fmls_head);
         }
@@ -950,8 +1065,12 @@ private:
             for (unsigned i = m_fmls_head ; i < m_fmls.size(); ++i) {
                 expr* fml = m_fmls.get(i);
                 g->assert_expr(fml);
+                
+                //expr_ref fml_ref(fml, m);
+                //std::cout << "fml_ref: " << fml_ref << std::endl;
             }
-            res = internalize_goal(g);
+            res = internalize_goal(g); // m_fmls -> m_clauses
+
         }
         if (res != l_undef) 
             m_fmls_head = m_fmls.size();

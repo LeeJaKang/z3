@@ -22,7 +22,12 @@ Revision History:
 #include "util/params.h"
 
 namespace sat {
-
+    enum sort_selection {
+        SC_RANDOM,
+        SC_ASCENDING,
+        SC_DESCENDING,
+        SC_NONE
+    };
     enum phase_selection {
         PS_ALWAYS_TRUE,
         PS_ALWAYS_FALSE,
@@ -84,6 +89,7 @@ namespace sat {
     };
 
     struct config {
+        sort_selection m_sort_clauses;
         unsigned long long m_max_memory;
         phase_selection    m_phase;
         unsigned           m_search_sat_conflicts;

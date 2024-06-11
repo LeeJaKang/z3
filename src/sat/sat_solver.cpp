@@ -22,6 +22,10 @@ Revision History:
 #ifndef SINGLE_THREAD
 #include <thread>
 #endif
+
+#include <iostream>
+#include <chrono>
+
 #include "util/luby.h"
 #include "util/trace.h"
 #include "util/max_cliques.h"
@@ -343,7 +347,6 @@ namespace sat {
     clause* solver::mk_clause(unsigned num_lits, literal * lits, sat::status st) {
         m_model_is_current = false;
             
-
         DEBUG_CODE({
                 for (unsigned i = 0; i < num_lits; i++) {
                     CTRACE("sat", was_eliminated(lits[i]), tout << lits[i] << " was eliminated\n";);
@@ -411,6 +414,11 @@ namespace sat {
     }
 
     clause * solver::mk_clause_core(unsigned num_lits, literal * lits, sat::status st) {
+        //std::cout << "num_lits: " << num_lits << std::endl;
+        //for (int i = 0; i < num_lits; i++)
+        //    std::cout << "lit: " << lits[i] << std::endl;
+        //std::cout << std::endl;
+
         bool redundant = st.is_redundant();
         TRACE("sat", tout << "mk_clause: "  << mk_lits_pp(num_lits, lits) << (redundant?" learned":" aux") << "\n";);
         bool logged = false;
@@ -432,7 +440,6 @@ namespace sat {
                 m_mc.add_clause(num_lits, lits);
             }
         }       
-
 
         switch (num_lits) {
         case 0:
@@ -495,6 +502,8 @@ namespace sat {
         else if (has_variables_to_reinit(l1, l2))
             push_reinit_stack(l1, l2);
         m_stats.m_mk_bin_clause++;
+        //std::cout << "2_clauses length: " << m_stats.m_mk_bin_clause << std::endl;
+        //std::cout << std::endl;
         get_wlist(~l1).push_back(watched(l2, redundant));
         get_wlist(~l2).push_back(watched(l1, redundant));
     }
@@ -543,15 +552,32 @@ namespace sat {
     }
 
     clause * solver::mk_ter_clause(literal * lits, sat::status st) {
+        //std::cout << "num_lits: " << 3 << std::endl;
+        //for (int i = 0; i < 3; i++)
+        //    std::cout << lits[i] << " ";
+        //std::cout << std::endl;
+
         VERIFY(ENABLE_TERNARY);
-        m_stats.m_mk_ter_clause++;
+        
         clause * r = alloc_clause(3, lits, st.is_redundant());
+
+        //std::cout << "clause address: " << r << std::endl;
+        //std::cout << std::endl;
+
         bool reinit = attach_ter_clause(*r, st);
         if (reinit || has_variables_to_reinit(*r)) push_reinit_stack(*r);
-        if (st.is_redundant())
+        if (st.is_redundant()) {
+            m_stats.m_mk_ter_learned++;
             m_learned.push_back(r);
-        else
+            //std::cout << "3_learned length: " << m_learned.size() << std::endl;
+            //std::cout << std::endl;
+        }
+        else {
+            m_stats.m_mk_ter_clause++;
             m_clauses.push_back(r);
+            //std::cout << "3_clauses length: " << m_clauses.size() << std::endl;
+            //std::cout << std::endl;
+        }
         for (literal l : *r) {
             m_touched[l.var()] = m_touch_index;
         }
@@ -593,16 +619,31 @@ namespace sat {
     }
 
     clause * solver::mk_nary_clause(unsigned num_lits, literal * lits, sat::status st) {
-        m_stats.m_mk_clause++;
+        //std::cout << "num_lits: " << num_lits << std::endl;
+        //for (int i = 0; i < num_lits; i++)
+        //    std::cout << lits[i] << " ";
+        //std::cout << std::endl;
+        
+        //std::cout << "m_mk_cluase : " << m_stats.m_mk_clause << std::endl;
         clause * r = alloc_clause(num_lits, lits, st.is_redundant());
+
+        //std::cout << "clause address: " << r << std::endl;
+        //std::cout << std::endl;
+
         SASSERT(!st.is_redundant() || r->is_learned());
         bool reinit = attach_nary_clause(*r, st.is_sat() && st.is_redundant());
         if (reinit || has_variables_to_reinit(*r)) push_reinit_stack(*r);
         if (st.is_redundant()) {
+            m_stats.m_mk_nary_learned++;
             m_learned.push_back(r);
+            //std::cout << "n_learned length: " << m_learned.size() << std::endl;
+            //std::cout << std::endl;
         }
         else {
+            m_stats.m_mk_clause++;
             m_clauses.push_back(r);
+            //std::cout << "n_clauses length: " << m_clauses.size() << std::endl;
+            //std::cout << std::endl;
         }
         if (m_config.m_drat) 
             m_drat.add(*r, st);
@@ -714,6 +755,8 @@ namespace sat {
         return m_defrag_threshold == 0 && m_config.m_gc_defrag;
     }
 
+    // 중복되거나 덜 유용한 절 제거
+    // 절의 순서 재조정
     void solver::defrag_clauses() {
         m_defrag_threshold = 2;
         if (memory_pressure()) return;
@@ -726,7 +769,7 @@ namespace sat {
 
         svector<bool_var> vars;
         for (unsigned i = 0; i < num_vars(); ++i) vars.push_back(i);
-        std::stable_sort(vars.begin(), vars.end(), cmp_activity(*this));
+        std::stable_sort(vars.begin(), vars.end(), cmp_activity(*this)); // 모든 변수를 활동도에 따라서 정렬함.
         literal_vector lits;
         for (bool_var v : vars) lits.push_back(literal(v, false)), lits.push_back(literal(v, true));
         // walk clauses, reallocate them in an order that defragments memory and creates locality.
@@ -1046,7 +1089,7 @@ namespace sat {
         unsigned qhead = m_qhead;
         bool r = propagate_core(update);
         if (m_config.m_branching_heuristic == BH_CHB) {
-            update_chb_activity(r, qhead);
+            update_chb_activity(r, qhead); // 여기서 chb 업데이트가 이루어짐
         }
         CASSERT("sat_propagate", check_invariant());
         CASSERT("sat_missed_prop", check_missed_propagation());
@@ -1312,12 +1355,18 @@ namespace sat {
         }
         try {
             init_search();
-            if (check_inconsistent()) return l_false;
+            if (check_inconsistent()) {
+                return l_false;
+            }
             propagate(false);
-            if (check_inconsistent()) return l_false;
+            if (check_inconsistent()) {
+                return l_false;
+            }
             init_assumptions(num_lits, lits);
             propagate(false);
-            if (check_inconsistent()) return l_false;
+            if (check_inconsistent()) {
+                return l_false;
+            }
             if (m_config.m_force_cleanup) do_cleanup(true);
             TRACE("sat", display(tout););
 
@@ -1329,7 +1378,9 @@ namespace sat {
 
             if (m_config.m_enable_pre_simplify) {
                 do_simplify();
-                if (check_inconsistent()) return l_false;
+                if (check_inconsistent()) {
+                    return l_false;
+                }
             }
 
             if (m_config.m_max_conflicts == 0) {
@@ -1343,9 +1394,9 @@ namespace sat {
                 m_restart_threshold = m_config.m_burst_search;
                 lbool r = bounded_search();
                 log_stats();
-                if (r != l_undef) 
+                if (r != l_undef) {  
                     return r;
-                
+                }
                 pop_reinit(scope_lvl());
                 m_conflicts_since_restart = 0;
                 m_restart_threshold = m_config.m_restart_initial;
@@ -1744,7 +1795,9 @@ namespace sat {
             else if (should_gc()) do_gc();
             else if (should_rephase()) do_rephase();
             else if (should_restart()) { if (!m_restart_enabled) return l_undef; do_restart(!m_config.m_restart_fast); }
-            else if (should_simplify()) do_simplify();
+            else if (should_simplify()) {
+                do_simplify(); // 여기가 결국 런타임을 증가시킨다.
+            }
             else if (!decide()) is_sat = final_check();
         }
         return is_sat;

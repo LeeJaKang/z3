@@ -17,6 +17,8 @@ Notes:
 
 --*/
 
+#include <iostream>
+
 #include "util/gparams.h"
 #include "ast/for_each_expr.h"
 #include "ast/ast_pp.h"
@@ -183,12 +185,14 @@ namespace opt {
 
     void context::set_hard_constraints(expr_ref_vector const& fmls) {
         if (m_calling_on_model) {
-            for (expr* f : fmls)
+            for (expr* f : fmls) {
                 add_hard_constraint(f);
+            }
             return;
         }
-        if (m_scoped_state.set(fmls)) 
+        if (m_scoped_state.set(fmls)) { // 여기서 fmls가 한번에 설정됨.
             clear_state();
+        }
     }
 
     void context::add_hard_constraint(expr* f) {
@@ -281,7 +285,8 @@ namespace opt {
                 add_maxsmt(obj.m_id, i);
             }
         }
-        m_hard_constraints.append(s.m_hard);
+        m_hard_constraints.append(s.m_hard); // 여기서 초기 m_hard_constraints가 추가됨.
+
     }
 
     lbool context::optimize(expr_ref_vector const& _asms) {
@@ -293,11 +298,11 @@ namespace opt {
             return execute_box();
         }
         clear_state();
-        init_solver(); 
-        import_scoped_state(); 
+        init_solver();
+        import_scoped_state();  // 초기 m_hard_constraints는 여기서 추가됨. 추후 normalize에서 변경되는듯?
         expr_ref_vector asms(_asms);
         asms.append(m_scoped_state.m_asms);
-        normalize(asms);
+        normalize(asms); // folmulas를 정규화하는 과정
         if (m_hard_constraints.size() == 1 && m.is_false(m_hard_constraints.get(0))) {
             return l_false;
         }
@@ -312,7 +317,7 @@ namespace opt {
         }
 #endif
         solver& s = get_solver();
-        s.assert_expr(m_hard_constraints);
+        s.assert_expr(m_hard_constraints); // 이곳에서 기본적인 m_fmls가 추가된다.
         
         opt_params optp(m_params);
         symbol pri = optp.priority();
@@ -676,7 +681,7 @@ namespace opt {
     }
 
     solver& context::get_solver() { 
-        return *m_solver.get(); 
+        return *m_solver.get();
     }
 
     void context::init_solver() {
@@ -837,10 +842,12 @@ namespace opt {
         }
 
         goal_ref g(alloc(goal, m, true, !asms.empty()));
-        for (expr* fml : fmls) 
-            g->assert_expr(fml);
-        for (expr * a : asms) 
+        for (expr* fml : fmls) {
+            g->assert_expr(fml); // 이때 대부분 추가됨.
+        }
+        for (expr * a : asms) {
             g->assert_expr(a, a);
+        }
         tactic_ref tac0 = 
             and_then(mk_simplify_tactic(m, m_params), 
                      mk_propagate_values_tactic(m),
@@ -1070,7 +1077,7 @@ namespace opt {
 
     void context::from_fmls(expr_ref_vector const& fmls) {
         TRACE("opt", tout << fmls << "\n";);
-        m_hard_constraints.reset();
+        m_hard_constraints.reset(); // 왜 리셋하지??
         for (expr * fml : fmls) {
             app_ref tr(m);
             expr_ref orig_term(m);
@@ -1112,7 +1119,7 @@ namespace opt {
                 m_objectives[index].m_adjust_value.set_negate(true);
             }
             else {
-                m_hard_constraints.push_back(fml);
+                m_hard_constraints.push_back(fml); // 여기서 대부분의 m_hard_constraints가 추가.
             }
         }
         // fix types of objectives:
@@ -1220,19 +1227,20 @@ namespace opt {
     }
 
     app* context::purify(generic_model_converter_ref& fm, expr* term) {
-       std::ostringstream out;
-       out << mk_bounded_pp(term, m, 3);
-       app* q = m.mk_fresh_const(out.str(), term->get_sort());
-       if (!fm) fm = alloc(generic_model_converter, m, "opt");
-       if (m_arith.is_int_real(term)) {
-           m_hard_constraints.push_back(m_arith.mk_ge(q, term));
-           m_hard_constraints.push_back(m_arith.mk_le(q, term));
-       }
-       else {
-           m_hard_constraints.push_back(m.mk_eq(q, term));
-       }
-       fm->hide(q);
-       return q;
+        std::ostringstream out;
+        out << mk_bounded_pp(term, m, 3);
+        app* q = m.mk_fresh_const(out.str(), term->get_sort());
+        
+        if (!fm) fm = alloc(generic_model_converter, m, "opt");
+        if (m_arith.is_int_real(term)) {
+            m_hard_constraints.push_back(m_arith.mk_ge(q, term));
+            m_hard_constraints.push_back(m_arith.mk_le(q, term));
+        }
+        else {
+            m_hard_constraints.push_back(m.mk_eq(q, term)); // 여기서 조금 더 추가
+        }
+        fm->hide(q);
+        return q;
     }
 
     /**
@@ -1260,12 +1268,12 @@ namespace opt {
 
     void context::to_fmls(expr_ref_vector& fmls) {
         m_objective_fns.reset();
-        fmls.append(m_hard_constraints);
+        fmls.append(m_hard_constraints); // 이때 대부분의 folmulas가 들어감.
         for (unsigned i = 0; i < m_objectives.size(); ++i) {
             objective const& obj = m_objectives[i];
             switch(obj.m_type) {
             case O_MINIMIZE:
-                fmls.push_back(mk_minimize(i, obj.m_term));
+                fmls.push_back(mk_minimize(i, obj.m_term)); // 이 부분이 각 최적화 목표를 넣어줌.
                 break;
             case O_MAXIMIZE:
                 fmls.push_back(mk_maximize(i, obj.m_term));

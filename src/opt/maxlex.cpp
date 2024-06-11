@@ -153,7 +153,7 @@ namespace opt {
             unsigned sz = m_soft.size();
             for (unsigned i = 0; i < sz; ++i) {
                 auto& soft = m_soft[i];
-                if (soft.value != l_undef) 
+                if (soft.value != l_undef)
                     continue;
                 expr_ref_vector asms(m);
                 asms.push_back(soft.s);
@@ -194,6 +194,7 @@ namespace opt {
             std::sort(m_soft.begin(), m_soft.end(), cmp);
         }            
         
+        // 이걸 실행함.
         lbool operator()() override {
             init();            
             return maxlexN();

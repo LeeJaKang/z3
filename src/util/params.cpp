@@ -391,7 +391,7 @@ public:
     void reset(symbol const & k);
     void reset(char const * k);
 
-    void validate(param_descrs const & p) {        
+    void validate(param_descrs const & p) {       
         symbol suffix, prefix;
         for (params::entry& e : m_entries) {
             param_kind expected = p.get_kind_in_module(e.first);

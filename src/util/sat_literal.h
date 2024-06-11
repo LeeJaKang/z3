@@ -37,10 +37,12 @@ namespace sat {
        the literal (not b) by the value 2*b + 1
     */
     class literal {
-        unsigned  m_val;
+        unsigned m_val;
+        unsigned m_frequency;
     public:
         literal():m_val(null_bool_var << 1) {
             SASSERT(var() == null_bool_var && !sign());
+            //m_frequency = 0;
         }
 
         explicit literal(bool_var v, bool _sign = false):
@@ -51,6 +53,14 @@ namespace sat {
 
         bool_var var() const {
             return m_val >> 1;
+        }
+
+        void incr_freq() {
+            m_frequency++;
+        }
+
+        unsigned get_freq() {
+            return m_frequency;
         }
 
         bool sign() const {

@@ -412,11 +412,13 @@ public:
     }
 
     void push_back(ref & r, value const & v) {
-        if (r.m_ref == nullptr)
+        if (r.m_ref == nullptr){
             mk(r);
+        }
+            
         if (r.root()) {
             if (r.unshared()) {
-                rpush_back(r.m_ref, v);
+                rpush_back(r.m_ref, v); // What's the purpose?
                 return;
             }
             if (C::preserve_roots) {
@@ -444,12 +446,14 @@ public:
                 return;
             }
         }
+        std::cout << "77777" << std::endl;
         cell * new_c  = mk(PUSH_BACK);
         new_c->m_idx       = size(r.m_ref);
         inc_ref(v);
         new_c->m_elem      = v;
         new_c->m_next      = r.m_ref;
         r.m_ref            = new_c;
+        std::cout << "88888" << std::endl;
         SASSERT(new_c->m_ref_count == 1);
     }
 

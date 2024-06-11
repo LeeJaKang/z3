@@ -117,8 +117,12 @@ void goal::copy_to(goal & target) const {
 
 void goal::push_back(expr * f, proof * pr, expr_dependency * d) {
     SASSERT(!proofs_enabled() || pr);
-    if (m().is_true(f))
+    //expr_ref fr(f, m());
+    //std::cout << "term: " << fr << std::endl;
+
+    if (m().is_true(f)) {
         return;
+    }
     if (m().is_false(f)) {
         // Make sure pr and d are not deleted by the m().del(...) statements.
         proof_ref saved_pr(m());
@@ -137,7 +141,14 @@ void goal::push_back(expr * f, proof * pr, expr_dependency * d) {
     else {
         SASSERT(!pr || m().get_fact(pr) == f);
         SASSERT(!m_inconsistent);
+
         m().push_back(m_forms, f);
+
+        //int size = m().size(m_forms);       
+        //expr_ref ff(m().get(m_forms, size-1), m());
+        //std::cout << "m_form: " << ff << std::endl;
+        //std::cout << "size: " << size << std::endl;
+
         m().push_back(m_proofs, pr);
         if (unsat_core_enabled())
             m().push_back(m_dependencies, d);
@@ -146,9 +157,12 @@ void goal::push_back(expr * f, proof * pr, expr_dependency * d) {
 
 void goal::quick_process(bool save_first, expr_ref& f, expr_dependency * d) {
     expr* g = nullptr;
+
+    //std::cout << std::endl << "fr: " << f;
     if (!m().is_and(f) && !(m().is_not(f, g) && m().is_or(g))) {
         if (!save_first) {
-            push_back(f, nullptr, d);
+            //std::cout << "fr: " << f << std::endl; 
+            push_back(f, nullptr, d); // 이 과정으로 인해서 큰 런타임 오버헤드가 발생함.
         }
         return;
     }
@@ -156,6 +170,7 @@ void goal::quick_process(bool save_first, expr_ref& f, expr_dependency * d) {
     sbuffer<expr_pol, 64> todo;
     expr_ref_vector tmp_exprs(m());
     todo.push_back(expr_pol(f, true));
+
     while (!todo.empty()) {
         if (m_inconsistent)
             return;
@@ -168,6 +183,9 @@ void goal::quick_process(bool save_first, expr_ref& f, expr_dependency * d) {
             unsigned i = t->get_num_args();
             while (i > 0) {
                 --i;
+                //expr* e = t->get_arg(i);
+                //expr_ref tr(e, m());
+                //std::cout << "and arg: " << tr << std::endl;
                 todo.push_back(expr_pol(t->get_arg(i), true));
             }
         }
@@ -176,22 +194,40 @@ void goal::quick_process(bool save_first, expr_ref& f, expr_dependency * d) {
             unsigned i = t->get_num_args();
             while (i > 0) {
                 --i;
+                //expr* e = t->get_arg(i);
+                //expr_ref tr(e, m());
+                //std::cout << "or arg: " << tr << std::endl;
                 todo.push_back(expr_pol(t->get_arg(i), false));
             }
         }
         else if (m().is_not(curr, g)) {
+            //expr_ref tr(g, m());
+            //std::cout << "not arg: " << tr << std::endl;
             todo.push_back(expr_pol(g, !pol));
         }
         else {
+            /*
+            f = (not (or N1_E_m2r4c240_m2r4c270 N2_E_m2r4c240_m2r4c270))
+            step 1 : (or N1_E_m2r4c240_m2r4c270 N2_E_m2r4c240_m2r4c270)
+            step 2_1: N2_E_m2r4c240_m2r4c270
+            step 2_2: N1_E_m2r4c240_m2r4c270
+            step 3_3: !N1_E_m2r4c240_m2r4c270
+            step 3_4: !N2_E_m2r4c240_m2r4c270
+            */
             if (!pol) {
                 curr = m().mk_not(curr);                
-                tmp_exprs.push_back(curr);
+                tmp_exprs.push_back(curr); // Why?
+                //push_back(curr, nullptr, d);
             }
             if (save_first) {
                 f = curr;
+                //expr_ref tr(curr, m());
+                //std::cout << "last term: " << tr << std::endl;
                 save_first = false;
             }
             else {
+                //expr_ref tr(curr, m());
+                //std::cout << "last term: " << tr << std::endl;
                 push_back(curr, nullptr, d);
             }
         }
@@ -261,7 +297,7 @@ void goal::assert_expr(expr * f, proof * pr, expr_dependency * d) {
         slow_process(f, pr, d);
     }
     else {
-        expr_ref fr(f, m());
+        expr_ref fr(f, m()); // expr* -> expr_ref
         quick_process(false, fr, d);
     }
 }
@@ -300,7 +336,7 @@ void goal::update(unsigned i, expr * f, proof * pr, expr_dependency * d) {
                 push_back(out_f, out_pr, d);
             }
             else {
-                m().set(m_forms, i, out_f);
+                m().set(m_forms, i, out_f); // No execute
                 m().set(m_proofs, i, out_pr);
                 if (unsat_core_enabled())
                     m().set(m_dependencies, i, d);
@@ -315,7 +351,19 @@ void goal::update(unsigned i, expr * f, proof * pr, expr_dependency * d) {
                 push_back(f, nullptr, d);
             }
             else {
+                //int size = m().size(m_forms);       
+                //expr_ref f1(m().get(m_forms, i), m());
+                //std::cout << "size: " << size << std::endl;
+                //std::cout << "m_form: " << f1 << std::endl;
+
                 m().set(m_forms, i, fr);
+
+                //size = m().size(m_forms);       
+                //expr_ref f2(m().get(m_forms, i), m());
+                //std::cout << "size: " << size << std::endl;
+                //std::cout << "m_form: " << f2 << std::endl;
+                //std::cout << std::endl;
+
                 if (unsat_core_enabled())
                     m().set(m_dependencies, i, d);
             }
@@ -476,8 +524,18 @@ unsigned goal::num_exprs() const {
 void goal::shrink(unsigned j) {
     SASSERT(j <= size());
     unsigned sz = size();
+
+    //std::cout << "start!" << std::endl;
+    //int size = m().size(m_forms);       
+    //std::cout << "m_form size: " << size << std::endl;
+
     for (unsigned i = j; i < sz; i++)
         m().pop_back(m_forms);
+    
+    //size = m().size(m_forms);       
+    //std::cout << "m_form size: " << size << std::endl;
+    //std::cout << "end!" << std::endl;
+
     for (unsigned i = j; i < sz; i++)
         m().pop_back(m_proofs);
     if (unsat_core_enabled()) 

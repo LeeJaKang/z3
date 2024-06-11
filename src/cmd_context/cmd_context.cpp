@@ -1657,6 +1657,7 @@ void cmd_context::check_sat(unsigned num_assumptions, expr * const * assumptions
         scoped_rlimit _rlimit(m().limit(), rlimit);
         expr_ref_vector asms(m());
         asms.append(num_assumptions, assumptions);
+
         if (!get_opt()->is_pareto() || is_clear) {
             expr_ref_vector assertions(m());
             unsigned sz = m_assertions.size();
@@ -1666,13 +1667,14 @@ void cmd_context::check_sat(unsigned num_assumptions, expr * const * assumptions
                     assertions.push_back(m().mk_implies(m_assertion_names[i], m_assertions[i]));
                 }
                 else {
-                    assertions.push_back(m_assertions[i]);
+                    assertions.push_back(m_assertions[i]); // 여기서 assertions들이 들어감.
                 }
             }
-            get_opt()->set_hard_constraints(assertions);
+            get_opt()->set_hard_constraints(assertions); // 여기서 전부 넣어짐
         }
+        
         try {
-            r = get_opt()->optimize(asms);
+            r = get_opt()->optimize(asms); // 이게 핵심
         }
         catch (z3_error & ex) {
             throw ex;

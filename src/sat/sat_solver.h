@@ -60,6 +60,8 @@ namespace sat {
         unsigned m_mk_var;
         unsigned m_mk_bin_clause;
         unsigned m_mk_ter_clause;
+        unsigned m_mk_ter_learned;
+        unsigned m_mk_nary_learned;
         unsigned m_mk_clause;
         unsigned m_conflict;
         unsigned m_propagate;
@@ -506,7 +508,8 @@ namespace sat {
         literal  trail_literal(unsigned i) const { return m_trail[i]; }
 
         // collect n-ary clauses
-        clause_vector const& clauses() const { return m_clauses; }
+        //clause_vector const& clauses() const { return m_clauses; }
+        clause_vector& clauses() { return m_clauses; }
 
         // collect binary clauses
         void collect_bin_clauses(svector<bin_clause> & r, bool learned, bool learned_only) const;

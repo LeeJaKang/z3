@@ -26,6 +26,8 @@ Author:
 Notes:
 
 --*/
+#include <iostream>
+
 #include "util/ref_util.h"
 #include "ast/ast_smt2_pp.h"
 #include "ast/ast_pp.h"
@@ -138,6 +140,13 @@ struct goal2sat::imp : public sat::sat_internalizer {
         TRACE("goal2sat", tout << "mk_clause: "; for (unsigned i = 0; i < n; i++) tout << lits[i] << " "; tout << "\n";);
         if (relevancy_enabled())
             ensure_euf()->add_aux(n, lits);
+
+        for (unsigned i = 0; i < n; i++) {
+            sat::literal& lit = lits[i];
+            lit.incr_freq();
+            std::cout << &lit << " " << lit << " " << (unsigned) lit.get_freq() << std::endl;
+        }
+
         m_solver.add_clause(n, lits, mk_status());
     }
 
@@ -159,6 +168,13 @@ struct goal2sat::imp : public sat::sat_internalizer {
         TRACE("goal2sat", tout << "mk_root_clause: "; for (unsigned i = 0; i < n; i++) tout << lits[i] << " "; tout << "\n";);
         if (relevancy_enabled())
             ensure_euf()->add_root(n, lits);
+
+        for (unsigned i = 0; i < n; i++) {
+            sat::literal& lit = lits[i];
+            lit.incr_freq();
+            std::cout << &lit << " " << lit << " " << (unsigned) lit.get_freq() << std::endl;
+        }
+
         m_solver.add_clause(n, lits, m_is_redundant ? mk_status() : sat::status::input());
     }
 
@@ -190,6 +206,10 @@ struct goal2sat::imp : public sat::sat_internalizer {
         if (!m_expr2var_replay || !m_expr2var_replay->find(t, v))  
             v = add_var(true, t);
         m_map.insert(t, v);
+
+        expr_ref tt(t, m);
+
+        //std::cout << "t, v: " << tt << " " << v << std::endl;
         return v;
     }
 
@@ -255,17 +275,26 @@ struct goal2sat::imp : public sat::sat_internalizer {
         m_cache_trail.push_back(t);
     }
     
+    // 여기서 BV 연산도 그냥 하나의 literal처럼 처리한다.
+    // m_result_satck은 literals와 같다.
+    // 그냥 하나인 녀석을 처리 (ex. A = True) 등...
     void convert_atom(expr * t, bool root, bool sign) {       
         SASSERT(m.is_bool(t));
         sat::literal  l;
         sat::bool_var v = m_map.to_bool_var(t);
+
+        expr_ref tf(t, m);
+        //std::cout << "tf: " << tf << std::endl;
+
         if (v == sat::null_bool_var) {
             if (m.is_true(t)) {
+                // 여기는 실행되지 않는 것 같다.
                 sat::literal tt = sat::literal(mk_bool_var(t), false);
                 mk_root_clause(tt);
                 l = sign ? ~tt : tt;
             }
             else if (m.is_false(t)) {
+                // 여기는 실행되지 않는 것 같다.
                 sat::literal ff = sat::literal(mk_bool_var(t), false);
                 mk_root_clause(~ff);
                 l = sign ? ~ff : ff;
@@ -283,7 +312,9 @@ struct goal2sat::imp : public sat::sat_internalizer {
                     }
                     m_unhandled_funs.push_back(to_app(t)->get_decl());
                 }
-
+                // 여기서 bv 연산을 하나의 리터럴 상수로 대체한다.
+                // 이 과정에서 변수들이 literal로 변경된다.
+                // mk_bool_var 함수에서 변수가 literal로 대체된다.
                 v = mk_bool_var(t);
                 l = sat::literal(v, sign);
                 bool ext = m_default_external || !is_uninterp_const(t) || m_interface_vars.contains(t);
@@ -295,13 +326,16 @@ struct goal2sat::imp : public sat::sat_internalizer {
         else {
             SASSERT(v != sat::null_bool_var);
             l = sat::literal(v, sign);
-            m_solver.set_eliminated(v, false);
+            m_solver.set_eliminated(v, false); // 이건 뭐지?
         }
         SASSERT(l != sat::null_literal);
-        if (root)
+
+        if (root) {
             mk_root_clause(l);
-        else
+        }
+        else {
             m_result_stack.push_back(l);
+        }
     }
 
     bool convert_app(app* t, bool root, bool sign) {
@@ -330,14 +364,20 @@ struct goal2sat::imp : public sat::sat_internalizer {
 
     bool visit(expr * t, bool root, bool sign) {
         SASSERT(m.is_bool(t));
+        expr_ref tf(t, m);
+
+        // app가 의미하는 것은 연산자를 의미한다고 생각. (AND 등..)
+        // 보편적으로 Z3는 논리 구조를 저장할 때, 트리 구조를 이용함.
         if (!is_app(t)) {
             convert_atom(t, root, sign);
             return true;
         }
-        if (process_cached(to_app(t), root, sign))
+        if (process_cached(to_app(t), root, sign)) {
             return true;
-        if (to_app(t)->get_family_id() != m.get_basic_family_id()) 
+        }
+        if (to_app(t)->get_family_id() != m.get_basic_family_id()) {
             return convert_app(to_app(t), root, sign);   
+        }
         switch (to_app(t)->get_decl_kind()) {
         case OP_NOT:
         case OP_OR:
@@ -347,7 +387,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
         case OP_IMPLIES:
             m_frame_stack.push_back(frame(to_app(t), root, sign, 0));
             return false;
-        case OP_EQ:            
+        case OP_EQ:
             if (m.is_bool(to_app(t)->get_arg(1))) {
                 m_frame_stack.push_back(frame(to_app(t), root, sign, 0));
                 return false;
@@ -377,6 +417,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
         unsigned num = t->get_num_args();
         SASSERT(num <= m_result_stack.size());
         unsigned old_sz = m_result_stack.size() - num;
+
         if (root) {
             SASSERT(num == m_result_stack.size());
             if (sign) {
@@ -388,7 +429,15 @@ struct goal2sat::imp : public sat::sat_internalizer {
                 }
             }
             else {
-                mk_root_clause(m_result_stack.size(), m_result_stack.data());
+                // 여기서 m_result_stack은 literal들의 벡터와 같다.
+                //std::cout << "m_result_stack.size: " << m_result_stack.size() << std::endl;
+                //for (int i = 0; i < m_result_stack.size(); i++)
+                //    std::cout << "m_result_stack.data: " << m_result_stack.data()[i] << std::endl;
+                //std::cout << std::endl;
+
+                //std::cout << "Before m_clauses.size: " << (dynamic_cast<sat::solver*> (&m_solver))->num_clauses() << std::endl;
+                mk_root_clause(m_result_stack.size(), m_result_stack.data()); // add m_clauses
+                //std::cout << "After m_clauses.size: " << (dynamic_cast<sat::solver*> (&m_solver))->num_clauses() << std::endl;
             }
             m_result_stack.shrink(old_sz);
         }
@@ -400,8 +449,11 @@ struct goal2sat::imp : public sat::sat_internalizer {
             sat::literal  l(k, false);
             cache(t, l);
             sat::literal * lits = m_result_stack.end() - num;       
-            for (unsigned i = 0; i < num; i++) 
-                mk_clause(~lits[i], l);
+            for (unsigned i = 0; i < num; i++) {
+                //std::cout << "Before1 m_clauses.size: " << (dynamic_cast<sat::solver*> (&m_solver))->num_clauses() << std::endl;
+                mk_clause(~lits[i], l); // add m_clauses
+                //std::cout << "After1 m_clauses.size: " << (dynamic_cast<sat::solver*> (&m_solver))->num_clauses() << std::endl;
+            }
                        
             m_result_stack.push_back(~l);
             lits = m_result_stack.end() - num - 1;
@@ -411,7 +463,10 @@ struct goal2sat::imp : public sat::sat_internalizer {
             }
             // remark: mk_clause may perform destructive updated to lits.
             // I have to execute it after the binary mk_clause above.
-            mk_clause(num+1, lits);
+            //std::cout << "Before2 m_clauses.size: " << (dynamic_cast<sat::solver*> (&m_solver))->num_clauses() << std::endl;
+            mk_clause(num+1, lits); // add m_clauses
+            //std::cout << "After2 m_clauses.size: " << (dynamic_cast<sat::solver*> (&m_solver))->num_clauses() << std::endl;
+
             if (aig()) 
                 aig()->add_or(l, num, aig_lits.data());
                         
@@ -483,10 +538,12 @@ struct goal2sat::imp : public sat::sat_internalizer {
     void convert_ite(app * n, bool root, bool sign) {
         unsigned sz = m_result_stack.size();
         SASSERT(sz >= 3);
+
         sat::literal  c = m_result_stack[sz-3];
         sat::literal  t = m_result_stack[sz-2];
         sat::literal  e = m_result_stack[sz-1];
         m_result_stack.shrink(sz - 3);
+
         if (root) {
             SASSERT(sz == 3);
             if (sign) {
@@ -554,6 +611,14 @@ struct goal2sat::imp : public sat::sat_internalizer {
         m_result_stack.shrink(sz - 2);
         if (root) {
             SASSERT(sz == 2);
+            
+            //  A -> B
+            // ~A V B # This is unsign case 
+
+            // ~(A -> B)
+            // ~(~A V B)
+            // A ^ ~B # This is sign case
+
             if (sign) {
                 mk_root_clause(l1);
                 mk_root_clause(~l2);
@@ -568,10 +633,18 @@ struct goal2sat::imp : public sat::sat_internalizer {
             sat::bool_var k = add_var(false, t);
             sat::literal  l(k, false);
             cache(t, l);
+            // 이 clause를 l이라는 하나의 literal로 치환하는 것임.
+            // 이렇게 해야만, 이것보다 높은 조건을 처리할 때, 훨씬 편리하게 처리가 가능하기 때문임. (SAT 명령어 계층 구조 때문에)
             // l <=> (l1 => l2)
+            // (l => (l1 => l2)) ^ ((l1 => l2) => l)
+            // (~l V (~l V l2) ^ (~(~l1 V l2) V l)
+            // (~l V ~l1 V l2) ^ ((l1 ^ ~l2) V l)
+            // (~l V ~l1 V l2) ^ (l1 V l) ^ (~l2 V l)
+
             mk_clause(~l, ~l1, l2);
             mk_clause(l1, l);
             mk_clause(~l2, l);
+
             if (sign)
                 l.neg();
             m_result_stack.push_back(l);
@@ -690,27 +763,78 @@ struct goal2sat::imp : public sat::sat_internalizer {
     }
 
     void convert(app * t, bool root, bool sign) {
+        int num = t->get_num_args();
+        //for (int i = 0; i < num; i++){
+        //    expr * arg = t->get_arg(i);
+        //
+        //    expr_ref fr(arg, m);
+        //    std::cout << "fr: " << fr << std::endl;
+        //}
+
+        //std::cout << "Before m_clauses.size: " << (dynamic_cast<sat::solver*> (&m_solver))->num_clauses() << std::endl;
         if (t->get_family_id() == m.get_basic_family_id()) {
             switch (to_app(t)->get_decl_kind()) {
             case OP_OR:
+                //for (int i = 0; i < num; i++){
+                //    expr * arg = t->get_arg(i);
+                //
+                //    expr_ref fr(arg, m);
+                //    std::cout << "OP_OR: " << fr << std::endl;
+                //}
                 convert_or(t, root, sign);
                 break;
             case OP_AND:
+                //for (int i = 0; i < num; i++){
+                //    expr * arg = t->get_arg(i);
+                //
+                //    expr_ref fr(arg, m);
+                //    std::cout << "OP_AND: " << fr << std::endl;
+                //}
                 convert_and(t, root, sign);
                 break;
             case OP_ITE:
+                //for (int i = 0; i < num; i++){
+                //    expr * arg = t->get_arg(i);
+                //
+                //    expr_ref fr(arg, m);
+                //    std::cout << "OP_ITE: " << fr << std::endl;
+                //}
                 convert_ite(t, root, sign);
                 break;
             case OP_EQ:
+                //for (int i = 0; i < num; i++){
+                //    expr * arg = t->get_arg(i);
+                //
+                //    expr_ref fr(arg, m);
+                //    std::cout << "OP_EQ: " << fr << std::endl;
+                //}               
                 convert_iff(t, root, sign);
                 break;
             case OP_XOR:
+                //for (int i = 0; i < num; i++){
+                //    expr * arg = t->get_arg(i);
+                //
+                //    expr_ref fr(arg, m);
+                //    std::cout << "OP_XOR: " << fr << std::endl;
+                //}           
                 convert_iff(t, root, sign);
                 break;
             case OP_IMPLIES:
+                //for (int i = 0; i < num; i++){
+                //    expr * arg = t->get_arg(i);
+                //
+                //    expr_ref fr(arg, m);
+                //    std::cout << "OP_IMPLIES: " << fr << std::endl;
+                //}           
                 convert_implies(t, root, sign);
                 break;
             case OP_NOT:
+                //for (int i = 0; i < num; i++){
+                //    expr * arg = t->get_arg(i);
+                //
+                //    expr_ref fr(arg, m);
+                //    std::cout << "OP_NOT: " << fr << std::endl;
+                //}           
                 convert_not(t, root, sign);
                 break;
             default:
@@ -718,12 +842,20 @@ struct goal2sat::imp : public sat::sat_internalizer {
             }
             SASSERT(!root || m_result_stack.empty());
         }
+        // 이곳은 수도 불린 솔버가 있는 경우를 의미한다. (default 옵션인 경우 여기 진입, sat.cardinality.solver=true인 경우)
         else if (!m_euf && pb.is_pb(t)) {
+            //for (int i = 0; i < num; i++){
+            //    expr * arg = t->get_arg(i);
+            //
+            //    expr_ref fr(arg, m);
+            //    std::cout << "OP_PB fr: " << fr << std::endl;
+            //}           
             convert_ba(t, root, sign);
         }
         else {
             UNREACHABLE();
         }
+        //std::cout << "After m_clauses.size: " << (dynamic_cast<sat::solver*> (&m_solver))->num_clauses() << std::endl;
     }
 
     struct scoped_stack {
@@ -786,6 +918,10 @@ struct goal2sat::imp : public sat::sat_internalizer {
             unsigned num = t->get_num_args();
             while (m_frame_stack[fsz-1].m_idx < num) {
                 expr * arg = t->get_arg(m_frame_stack[fsz-1].m_idx);
+                
+                //expr_ref fr(arg, m);
+                //std::cout << "goal2sat fr: " << fr << std::endl;
+
                 m_frame_stack[fsz - 1].m_idx++;
                 if (!visit(arg, false, false))
                     goto loop;
@@ -795,8 +931,8 @@ struct goal2sat::imp : public sat::sat_internalizer {
                   tout << mk_bounded_pp(t, m, 2) << " root: " << root << " sign: " << sign << "\n";
                   tout << m_result_stack << "\n";);
             SASSERT(m_frame_stack.size() > sz);
-            convert(t, root, sign);
-            m_frame_stack.pop_back();            
+            convert(t, root, sign); // m_fmls -> m_clauses
+            m_frame_stack.pop_back();   
         }
         TRACE("goal2sat", tout 
             << "done process: " << mk_bounded_pp(n, m, 3) 
@@ -919,7 +1055,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
         ptr_vector<expr> deps;
         expr_ref_vector  fmls(m);
         for (unsigned idx = 0; idx < size; idx++) {
-            f = g.form(idx);
+            f = g.form(idx); // get m_form
             // Add assumptions.
             if (g.dep(idx)) {
                 deps.reset();
@@ -930,7 +1066,6 @@ struct goal2sat::imp : public sat::sat_internalizer {
                     expr * d1 = d;
                     SASSERT(m.is_bool(d));
                     bool sign = m.is_not(d, d1);
-
                     insert_dep(d, d1, sign);
                     if (d == f) {
                         goto skip_dep;
@@ -942,11 +1077,12 @@ struct goal2sat::imp : public sat::sat_internalizer {
                         d_new = m.mk_not(d);
                     }
                     fmls.push_back(d_new);
-                }                
+                }
                 f = m.mk_or(fmls);
             }
             TRACE("goal2sat", tout << mk_bounded_pp(f, m, 2) << "\n";);
-            process(f);
+            process(f); // m_fmls -> m_clauses
+            // std::cout << "m_clauses.size : " << (dynamic_cast<sat::solver*> (&m_solver))->num_clauses() << std::endl;
         skip_dep:
             ;
         }
@@ -1025,7 +1161,8 @@ void goal2sat::init(ast_manager& m, params_ref const & p, sat::solver_core & t, 
 
 void goal2sat::operator()(goal const & g, params_ref const & p, sat::solver_core & t, atom2bool_var & m, dep2asm_map& dep2asm, bool default_external) {
     init(g.m(), p, t, m, dep2asm, default_external);
-    (*m_imp)(g);    
+    (*m_imp)(g);    // m_fmls -> m_clauses
+    //std::cout << "m_clauses.size: " << (dynamic_cast<sat::solver*> (&t))->num_clauses() << std::endl;
 }
 
 void goal2sat::operator()(ast_manager& m, unsigned n, expr* const* fmls, params_ref const & p, sat::solver_core & t, atom2bool_var & map, dep2asm_map& dep2asm, bool default_external) {

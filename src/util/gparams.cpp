@@ -577,8 +577,9 @@ public:
                 throw exception(std::move(strm).str());
             }
         }
-        if (!d->contains(sp))
+        if (!d->contains(sp)) {
             throw_unknown_parameter(p, *d, m);
+        }
         out << "  name:           " << p << "\n";
         if (m[0]) {
             out << "  module:         " << m << "\n";

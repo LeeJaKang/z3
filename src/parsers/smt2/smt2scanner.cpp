@@ -115,6 +115,7 @@ namespace smt2 {
     scanner::token scanner::read_symbol_core() {
         while (!m_at_eof) {
             char c = curr();
+            
             signed char n = m_normalized[static_cast<unsigned char>(c)];
             if (n == 'a' || n == '0' || n == '-') {
                 m_string.push_back(c);

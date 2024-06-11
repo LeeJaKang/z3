@@ -25,6 +25,8 @@ Revision History:
 --*/
 #pragma once
 
+#include <iostream>
+
 #include "util/debug.h"
 #include <algorithm>
 #include <functional>
@@ -720,6 +722,7 @@ public:
     ptr_vector(unsigned s):vector<T *, false>(s) {}
     ptr_vector(unsigned s, T * elem):vector<T *, false>(s, elem) {}
     ptr_vector(unsigned s, T * const * data):vector<T *, false>(s, const_cast<T**>(data)) {}
+    
     std::ostream& display(std::ostream& out, char const* delim = " ") const {
         char const* d = "";
         for (auto const* u : *this) {
@@ -730,6 +733,12 @@ public:
             d = delim;
         }
         return out;
+    }
+    
+    void swap_elements(unsigned i, unsigned j) {
+        if (i < this->size() && j < this->size()) {
+            std::swap((*this)[i], (*this)[j]);
+        }
     }
 };
 
