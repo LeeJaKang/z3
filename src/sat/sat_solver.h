@@ -46,6 +46,19 @@ Revision History:
 #include "sat/sat_parallel.h"
 #include "sat/sat_local_search.h"
 #include "sat/sat_solver_core.h"
+#include <unordered_map>
+
+
+namespace std {
+    template <>
+    struct hash<sat::literal> {
+        std::size_t operator()(const sat::literal& lit) const noexcept {
+            //return lit.hash()>>1; // 부정 긍정 구분 없이 해시에 넣기
+            return lit.hash(); // 부정 긍정 구분해서 해시에 넣기
+        }
+    };
+}
+
 
 namespace pb {
     class solver;
@@ -92,7 +105,8 @@ namespace sat {
     class solver : public solver_core {
     public:
         struct abort_solver {};
-    protected:
+    public:
+    //protected:
         enum search_state { s_sat, s_unsat };
 
         bool                    m_checkpoint_enabled;
@@ -176,6 +190,10 @@ namespace sat {
         literal_vector          m_trail;
         clause_wrapper_vector   m_clauses_to_reinit;
         std::string             m_reason_unknown;
+        std::unordered_map<literal, double> m_lit_freq;
+        std::unordered_map<literal, double> m_lit_score;
+        std::unordered_map<unsigned, bool> m_visit_level;
+        bool m_init_assign;
 
         svector<unsigned>       m_visited;
         unsigned                m_visited_ts;
@@ -284,6 +302,9 @@ namespace sat {
 
         random_gen& rand() { return m_rand; }
 
+        void update_literal_info(unsigned n, literal* lits);
+        void assign_init_weight();
+
     protected:
         void reset_var(bool_var v, bool ext, bool dvar);
 
@@ -362,6 +383,8 @@ namespace sat {
         // is the state inconsistent?
         bool inconsistent() const { return m_inconsistent; }
 
+        std::unordered_map<literal, double> get_lit_freq() { return m_lit_freq; }
+        std::unordered_map<literal, double> get_lit_score() { return m_lit_score; }
         // number of variables and clauses
         unsigned num_vars() const { return m_justification.size(); }
         unsigned num_clauses() const;
@@ -402,6 +425,7 @@ namespace sat {
             if (j.level() == 0) 
                 m_justification[l.var()] = j;
         }
+        void init_phases();
         void assign_unit(literal l) { assign(l, justification(0)); }
         void assign_scoped(literal l) { assign(l, justification(scope_lvl())); }
         void assign_core(literal l, justification jst);

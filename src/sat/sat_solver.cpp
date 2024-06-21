@@ -44,8 +44,6 @@ Revision History:
 #define ENABLE_TERNARY true
 
 namespace sat {
-
-
     solver::solver(params_ref const & p, reslimit& l):
         solver_core(l),
         m_checkpoint_enabled(true),
@@ -249,6 +247,22 @@ namespace sat {
         m_stats.m_units = init_trail_size();
     }
 
+    void solver::update_literal_info(unsigned n, literal* lits) {
+        if (1 < n) {
+            for (unsigned i = 0; i < n; i++) {
+                literal lit = lits[i];
+                
+                m_lit_freq[lit.unsign()] += 1.0/n;
+
+                auto& score = m_lit_score[lit.unsign()];            
+                if (lit.sign() == true)
+                    score += 1.0/n;
+                else
+                    score -= 1.0/n;
+            }
+        }
+    }
+
     // -----------------------
     //
     // Variable & Clause creation
@@ -287,6 +301,7 @@ namespace sat {
         m_model_is_current = false;
         m_stats.m_mk_var++;
         bool_var v = m_justification.size();
+
         if (!m_free_vars.empty()) {
             v = m_free_vars.back();
             m_free_vars.pop_back();
@@ -310,7 +325,7 @@ namespace sat {
         m_mark.push_back(false);
         m_lit_mark.push_back(false);
         m_lit_mark.push_back(false);
-        m_phase.push_back(false);
+        m_phase.push_back(false); // 얘를 업데이트 하는 애로 바꿔보자!
         m_best_phase.push_back(false);
         m_prev_phase.push_back(false);
         m_assigned_since_gc.push_back(false);
@@ -319,7 +334,8 @@ namespace sat {
         m_participated.push_back(0);
         m_canceled.push_back(0);
         m_reasoned.push_back(0);
-        m_case_split_queue.mk_var_eh(v);
+
+        m_case_split_queue.mk_var_eh(v); // 여기에서 리터럴 및 리터럴 가중치 생성
         m_simplifier.insert_elim_todo(v);
         SASSERT(!was_eliminated(v));
         return v;
@@ -415,8 +431,9 @@ namespace sat {
 
     clause * solver::mk_clause_core(unsigned num_lits, literal * lits, sat::status st) {
         //std::cout << "num_lits: " << num_lits << std::endl;
+        //std::cout << "Make lits: ";
         //for (int i = 0; i < num_lits; i++)
-        //    std::cout << "lit: " << lits[i] << std::endl;
+        //    std::cout << lits[i] << " ";
         //std::cout << std::endl;
 
         bool redundant = st.is_redundant();
@@ -465,10 +482,15 @@ namespace sat {
     }
 
     void solver::mk_bin_clause(literal l1, literal l2, sat::status st) {
+        //std::cout << "lits: ";
+        //std::cout << l1 << " " << l2;
+        //std::cout << std::endl;
+
         bool redundant = st.is_redundant();
         m_touched[l1.var()] = m_touch_index;
         m_touched[l2.var()] = m_touch_index;
         
+        // 학습된 절인 경우에는, 다른 하나의 변수 값이 정해져 있으므로 미리 값을 할당할 수 있다. 
         if (redundant && find_binary_watch(get_wlist(~l1), ~l2) && value(l1) == l_undef) {
             assign_unit(l1);
             return;
@@ -477,6 +499,7 @@ namespace sat {
             assign_unit(l2);
             return;
         }
+
         watched* w0 = redundant ? find_binary_watch(get_wlist(~l1), l2) : nullptr;
         if (w0) {
             TRACE("sat", tout << "found binary " << l1 << " " << l2 << "\n";);
@@ -502,8 +525,6 @@ namespace sat {
         else if (has_variables_to_reinit(l1, l2))
             push_reinit_stack(l1, l2);
         m_stats.m_mk_bin_clause++;
-        //std::cout << "2_clauses length: " << m_stats.m_mk_bin_clause << std::endl;
-        //std::cout << std::endl;
         get_wlist(~l1).push_back(watched(l2, redundant));
         get_wlist(~l2).push_back(watched(l1, redundant));
     }
@@ -553,6 +574,7 @@ namespace sat {
 
     clause * solver::mk_ter_clause(literal * lits, sat::status st) {
         //std::cout << "num_lits: " << 3 << std::endl;
+        //std::cout << "lits: ";
         //for (int i = 0; i < 3; i++)
         //    std::cout << lits[i] << " ";
         //std::cout << std::endl;
@@ -560,23 +582,15 @@ namespace sat {
         VERIFY(ENABLE_TERNARY);
         
         clause * r = alloc_clause(3, lits, st.is_redundant());
-
-        //std::cout << "clause address: " << r << std::endl;
-        //std::cout << std::endl;
-
         bool reinit = attach_ter_clause(*r, st);
         if (reinit || has_variables_to_reinit(*r)) push_reinit_stack(*r);
         if (st.is_redundant()) {
             m_stats.m_mk_ter_learned++;
             m_learned.push_back(r);
-            //std::cout << "3_learned length: " << m_learned.size() << std::endl;
-            //std::cout << std::endl;
         }
         else {
             m_stats.m_mk_ter_clause++;
             m_clauses.push_back(r);
-            //std::cout << "3_clauses length: " << m_clauses.size() << std::endl;
-            //std::cout << std::endl;
         }
         for (literal l : *r) {
             m_touched[l.var()] = m_touch_index;
@@ -620,30 +634,22 @@ namespace sat {
 
     clause * solver::mk_nary_clause(unsigned num_lits, literal * lits, sat::status st) {
         //std::cout << "num_lits: " << num_lits << std::endl;
+        //std::cout << "lits: ";
         //for (int i = 0; i < num_lits; i++)
         //    std::cout << lits[i] << " ";
         //std::cout << std::endl;
         
-        //std::cout << "m_mk_cluase : " << m_stats.m_mk_clause << std::endl;
         clause * r = alloc_clause(num_lits, lits, st.is_redundant());
-
-        //std::cout << "clause address: " << r << std::endl;
-        //std::cout << std::endl;
-
         SASSERT(!st.is_redundant() || r->is_learned());
         bool reinit = attach_nary_clause(*r, st.is_sat() && st.is_redundant());
         if (reinit || has_variables_to_reinit(*r)) push_reinit_stack(*r);
         if (st.is_redundant()) {
             m_stats.m_mk_nary_learned++;
             m_learned.push_back(r);
-            //std::cout << "n_learned length: " << m_learned.size() << std::endl;
-            //std::cout << std::endl;
         }
         else {
             m_stats.m_mk_clause++;
             m_clauses.push_back(r);
-            //std::cout << "n_clauses length: " << m_clauses.size() << std::endl;
-            //std::cout << std::endl;
         }
         if (m_config.m_drat) 
             m_drat.add(*r, st);
@@ -989,6 +995,7 @@ namespace sat {
     void solver::assign_core(literal l, justification j) {
         SASSERT(value(l) == l_undef);
         TRACE("sat_assign_core", tout << l << " " << j << "\n";);
+
         if (j.level() == 0) {
             if (m_config.m_drat) 
                 drat_log_unit(l, j);
@@ -997,13 +1004,31 @@ namespace sat {
         else {
             VERIFY(!at_base_lvl());
         }
+
+        //std::cout << l << " is true and level is " << j.level() <<", ";
+        //if (j.is_binary_clause()) {
+        //    literal l2 = j.get_literal();
+        //    std::cout << "ls: " << l2;
+        //} else if (j.is_ternary_clause()) {
+        //    literal l2 = j.get_literal1();
+        //    literal l3 = j.get_literal2();
+        //    std::cout << "ls: " << l2 << " " << l3;
+        //} else if (j.is_clause()) {
+        //    std::cout << "is clauses.";
+        //} else if (j.is_none()) {
+        //    std::cout << "is none.";
+        //}
+        //std::cout << std::endl;
+
+        m_visit_level[j.level()] = true;
+
         m_assignment[l.index()]    = l_true;
         m_assignment[(~l).index()] = l_false;
         bool_var v = l.var();
         m_justification[v]         = j;
-        m_phase[v]                 = !l.sign();
+        m_phase[v]                 = !l.sign(); // 다음에 이 변수에 할당할 때는, 반대의 부호로 할당하라는 의미.
         m_assigned_since_gc[v]     = true;
-        m_trail.push_back(l);
+        m_trail.push_back(l); // assign된 순서대로 저장
         
         switch (m_config.m_branching_heuristic) {
         case BH_VSIDS: 
@@ -1068,7 +1093,7 @@ namespace sat {
             do {
                 checkpoint();
                 m_cleaner.dec();
-                literal l = m_trail[m_qhead];
+                literal l = m_trail[m_qhead]; // 예전에 처리한 시점부터, 할당한 변수를 훑어가며 로직을 전파함.
                 m_qhead++;
                 if (!propagate_literal(l, update))
                     return false;
@@ -1096,6 +1121,9 @@ namespace sat {
         return r;
     }
 
+    // 처음에 가정한 변수에 의해서 다른 변수들이 정해져야 하는 경우
+    // Ex. A = True라고 가정한 경우, (~A v B) 에서 B는 반드시 True가 되어야 함.
+    // 만약 A = False라고 가정한 경우, (~A v B) 에서 B는 둘 다 될 수 있으니 propagate이 아님
     bool solver::propagate_literal(literal l, bool update) {
         literal l1, l2;
         lbool val1, val2;
@@ -1119,6 +1147,7 @@ namespace sat {
             }
         for (; it != end; ++it) {
             switch (it->get_kind()) {
+
             case watched::BINARY:
                 l1 = it->get_literal();
                 switch (value(l1)) {
@@ -1141,6 +1170,7 @@ namespace sat {
                 l2 = it->get_literal2();
                 val1 = value(l1);
                 val2 = value(l2);
+
                 if (val1 == l_false && val2 == l_undef) {
                     m_stats.m_ter_propagate++;
                     assign_core(l2, justification(std::max(curr_level, lvl(l1)), l1, not_l));
@@ -1168,9 +1198,50 @@ namespace sat {
                 clause_offset cls_off = it->get_clause_offset();
                 clause& c = get_clause(cls_off);
                 TRACE("propagate_clause_bug", tout << "processing... " << c << "\nwas_removed: " << c.was_removed() << "\n";);
-                if (c[0] == not_l)
-                    std::swap(c[0], c[1]);
+
+
+                for (int index = 0; index < c.size(); ++index) {
+                    if (c[index] == not_l) {
+                        std::swap(c[index], c[1]);
+                        break;
+                    }
+                }
+
+                //unsigned min_index = 0;
+                //double min_freq = m_lit_freq[c[0].unsign()];
+//
+                //for (int index = 2; index < c.size(); ++index) {
+                //    double freq = m_lit_freq[c[index].unsign()];
+                //    if (freq < min_freq) {
+                //        min_index = index;
+                //        min_freq = freq;
+                //    }
+                //}
+//
+                //if (min_index != 0) {
+                //    std::swap(c[min_index], c[0]);
+                //}
+//
+                //std::sort(c.begin() + 2, c.end(), [&](const literal& a, const literal& b) {
+                //    return m_lit_freq[a.unsign()] > m_lit_freq[b.unsign()];
+                //});
+
+
+                //for (literal lit : c) {
+                //    if (lit == not_l)
+                //        std::cout << "[" << lit << "]" << " ";
+                //    else
+                //        std::cout << lit << " ";
+                //    std::cout << value(lit) << " (" << m_lit_freq[lit.unsign()] << ") ";
+                //}
+                //std::cout << std::endl;
+
+
+                //if (c[0] == not_l)
+                //    std::swap(c[0], c[1]);
+                
                 CTRACE("propagate_bug", c[1] != not_l, tout << "l: " << l << " " << c << "\n";);
+
                 if (c.was_removed() || c.size() == 1 || c[1] != not_l) {
                     // Remark: this method may be invoked when the watch lists are not in a consistent state,
                     // and may contain dead/removed clauses, or clauses with removed literals.
@@ -1375,20 +1446,17 @@ namespace sat {
                 m_conflicts_since_gc = m_gc_threshold + 1;
                 do_gc();
             }
-
             if (m_config.m_enable_pre_simplify) {
                 do_simplify();
                 if (check_inconsistent()) {
                     return l_false;
                 }
             }
-
             if (m_config.m_max_conflicts == 0) {
                 IF_VERBOSE(SAT_VB_LVL, verbose_stream() << "(sat \"abort: max-conflicts = 0\")\n";);
                 TRACE("sat", display(tout); m_mc.display(tout););
                 return l_undef;
             }
-
             log_stats();
             if (m_config.m_max_conflicts > 0 && m_config.m_burst_search > 0) {               
                 m_restart_threshold = m_config.m_burst_search;
@@ -1401,7 +1469,6 @@ namespace sat {
                 m_conflicts_since_restart = 0;
                 m_restart_threshold = m_config.m_restart_initial;
             }
-
             lbool is_sat = search();
             log_stats();
             return is_sat;
@@ -1685,16 +1752,50 @@ namespace sat {
         m_par_syncing_clauses = false;
     }
 
+    void solver::assign_init_weight() {
+        bool first = true;
+
+        double max = 0;
+        double min = 0;
+
+        for (const auto& pair : m_lit_freq) {
+            const double freq = pair.second;
+
+            if (first) {
+                first =false;
+
+                max = freq;
+                min = freq;
+            } else {
+                if (max < freq)
+                    max = freq;
+                if (freq < min)
+                    min = freq;
+            }
+        }
+
+        for (const auto& pair : m_lit_freq) {
+            const literal& lit = pair.first;
+            const double freq = pair.second;
+            
+            int normed_freq = (int) 10000 * (freq-min)/(max-min); // 이 값에 따라서, 크게 바뀔 수 있다.
+            set_activity(lit.var(), normed_freq);
+            //std::cout << "set lit: " << lit.var() << " activty: " << m_activity[lit.var()] << std::endl;
+        }
+        m_case_split_queue.update_heap();
+    }
+
     bool_var solver::next_var() {
         bool_var next;
-
         if (m_rand() < static_cast<int>(m_config.m_random_freq * random_gen::max_value())) {
             if (num_vars() == 0)
                 return null_bool_var;
             next = m_rand() % num_vars();
             TRACE("random_split", tout << "next: " << next << " value(next): " << value(next) << "\n";);
-            if (value(next) == l_undef && !was_eliminated(next))
-                return next;
+            //if (value(next) == l_undef && !was_eliminated(next))
+            //    return next;
+            // 그냥 랜덤하게 literal 쓰는 것을 아예 허락하지 않음.
+            // 이 위에 두 줄이 런타임에 큰 영향을 줌. 왜 쓰는건지 이해가 안됨.
         }
 
         while (!m_case_split_queue.empty()) {
@@ -1708,7 +1809,7 @@ namespace sat {
                     age = m_stats.m_conflict - m_canceled[next];                    
                 }
             }
-            next = m_case_split_queue.next_var();
+            next = m_case_split_queue.next_var(); // 다음 변수를 찾는 핵심 부분
             if (value(next) == l_undef && !was_eliminated(next))
                 return next;
         }
@@ -1730,9 +1831,10 @@ namespace sat {
                 return m_phase[next];
             case PS_FROZEN:
                 return m_best_phase[next];
-            case PS_SAT_CACHING:
-                if (m_search_state == s_unsat)
-                    return m_phase[next];
+            case PS_SAT_CACHING: // 기본 값
+                if (m_search_state == s_unsat) {
+                    return m_phase[next]; // 기본 값
+                }
                 return m_best_phase[next];
             case PS_RANDOM:
                 return (m_rand() % 2) == 0;
@@ -1742,6 +1844,7 @@ namespace sat {
         }
     }
 
+    // 다음에 할당할 리터럴을 정하는 함수
     bool solver::decide() {
         bool_var next;
         lbool phase = l_undef;
@@ -1749,7 +1852,8 @@ namespace sat {
         bool used_queue = false;
         if (!m_ext || !m_ext->get_case_split(next, phase)) {
             used_queue = true;
-            next = next_var();
+            //m_case_split_queue.display(std::cout, 6);
+            next = next_var(); // 얘가 다음 변수를 뭘로 결정할 지 정하는 함수
             if (next == null_bool_var)
                 return false;
         }
@@ -1766,6 +1870,8 @@ namespace sat {
                 m_case_split_queue.unassign_var_eh(next);
             next_lit = literal(next, false);
         }
+
+        
         
         if (phase == l_undef)
             is_pos = guess(next);
@@ -1776,7 +1882,10 @@ namespace sat {
             next_lit.neg();
         
         TRACE("sat_decide", tout << scope_lvl() << ": next-case-split: " << next_lit << "\n";);
-        assign_scoped(next_lit);
+
+        //std::cout << "next_var: " << next_lit << " " << m_activity[next_lit.var()] << std::endl;
+        //std::cout << "next_var: " << next_lit << std::endl;
+        assign_scoped(next_lit); 
         return true;
     }
 
@@ -2176,8 +2285,11 @@ namespace sat {
         for (bool_var v = 0; v < num; v++) {
             if (!was_eliminated(v)) {
                 m_model[v] = value(v);
-                m_phase[v] = value(v) == l_true;
-                m_best_phase[v] = value(v) == l_true;
+                if (value(v) == l_true) 
+                    m_phase[v] = true; // 단일 항 등으로 미리 부호가 정해져야 하는 것들은 부호가 여기서 정해짐.
+            
+                if (value(v) == l_true)
+                    m_best_phase[v] = true;
             }
         }
         TRACE("sat_mc_bug", m_mc.display(tout););
@@ -2458,7 +2570,7 @@ namespace sat {
         }
     }
 
-
+    // 여기서 학습된 절을 추가하는 과정이 있다.
     lbool solver::resolve_conflict_core() {
         m_conflicts_since_init++;
         m_conflicts_since_restart++;
@@ -2545,9 +2657,11 @@ namespace sat {
             case justification::NONE:
                 break;
             case justification::BINARY:
+                //std::cout << "not_l: " << m_not_l << " js1: " << js.get_literal() << "(" << value(js.get_literal()) << ")" << std::endl;
                 process_antecedent(~(js.get_literal()), num_marks);
                 break;
             case justification::TERNARY:
+                //std::cout << "not_l: " << m_not_l << " js1: " << js.get_literal1() << "(" << value(js.get_literal1()) << ") js2: " << js.get_literal2() << "(" << value(js.get_literal2()) << std::endl;
                 process_antecedent(~(js.get_literal1()), num_marks);
                 process_antecedent(~(js.get_literal2()), num_marks);
                 break;
@@ -2919,7 +3033,7 @@ namespace sat {
             mark(var);
             switch (m_config.m_branching_heuristic) {
             case BH_VSIDS:
-                inc_activity(var);
+                inc_activity(var); // 이게 변수의 가중치를 조절하는 부분 JKLEE
                 break;
             case BH_CHB:
                 m_last_conflict[var] = m_stats.m_conflict;
@@ -2927,10 +3041,13 @@ namespace sat {
             default:
                 break;
             }
-            if (var_lvl == m_conflict_lvl)
+            if (var_lvl == m_conflict_lvl) {
                 num_marks++;
-            else
-                m_lemma.push_back(~antecedent);
+            }
+            else {
+                //std::cout << "Learned : " << ~antecedent << std::endl;
+                m_lemma.push_back(~antecedent); // 나중에 이 리스트의 값들을 Or로 합쳐서 m_learned에 넣음.
+            }
         }
     }
 
@@ -4380,6 +4497,20 @@ namespace sat {
         return l_true;
     }
 
+    void solver::init_phases(){
+        for (unsigned i = 0; i < m_phase.size(); i++) {
+            literal lit(i, false);
+            double score = m_lit_score[lit.unsign()];
+            double threshold = 0.0;
+
+            if (threshold < score) {
+                m_phase[i] = true;
+            }
+
+            //std::cout << "Init assign: " << lit << " " << m_phase[i] << std::endl;
+
+        }
+    }
 
     lbool solver::get_consequences(literal_vector const& asms, bool_var_vector const& vars, vector<literal_vector>& conseq) {
         literal_vector lits;

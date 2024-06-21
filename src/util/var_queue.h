@@ -20,25 +20,25 @@ Revision History:
 
 #include "util/heap.h"
 
-
     
 class var_queue {
     typedef unsigned var;
 
+    svector<unsigned> & m_activity;
     struct lt {
         svector<unsigned> & m_activity;
     lt(svector<unsigned> & act):m_activity(act) {}
-        bool operator()(var v1, var v2) const { return m_activity[v1] > m_activity[v2]; }
+        bool operator()(var v1, var v2) const {  // 여기서 activity를 비교
+            return m_activity[v1] > m_activity[v2]; 
+        }
     };
     heap<lt>  m_queue;
 public:
-
-    
-    var_queue(svector<unsigned> & act):m_queue(128, lt(act)) {}
+    var_queue(svector<unsigned> & act):m_queue(128, lt(act)), m_activity(act)  {}
     
     void activity_increased_eh(var v) {
         if (m_queue.contains(v))
-            m_queue.decreased(v);
+            m_queue.decreased(v); // 결국 이게 변수의 가중치를 조절하는 부분
     }
     
     void activity_changed_eh(var v, bool up) {
@@ -48,6 +48,10 @@ public:
             else 
                 m_queue.increased(v);
         }
+    }
+
+    void update_heap() {
+        m_queue.heapify();
     }
     
     void mk_var_eh(var v) {
@@ -71,7 +75,7 @@ public:
     
     bool empty() const { return m_queue.empty(); }
     
-    var next_var() { SASSERT(!empty()); return m_queue.erase_min(); }
+    var next_var() { SASSERT(!empty()); return m_queue.erase_min(); } // 다음 리터럴 선정
     
     var min_var() { SASSERT(!empty()); return m_queue.min_value(); }
     
@@ -86,6 +90,19 @@ public:
                 out << " ";
             }
             out << v;
+        }
+        return out;
+    }
+
+    std::ostream& display(std::ostream& out, int length) const {
+        int index = 1;
+        for (auto v : m_queue) {
+            int act = m_activity[v];
+
+            out << "idx: " << index << " key: " << v << " act: " << act << std::endl;
+            index++;
+            if (length < index)
+                break;
         }
         return out;
     }

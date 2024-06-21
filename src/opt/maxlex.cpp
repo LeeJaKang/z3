@@ -26,6 +26,22 @@ Author:
 
 namespace opt {
 
+    unsigned int num_sat;
+    unsigned int num_unsat;
+    double sat_unsat_ratio;
+
+    void incr_sat() {
+        num_sat++;
+    }
+
+    void incr_unsat() {
+        num_unsat++;
+    }
+
+    double get_sat_unsat_ratio(){
+        return (double) num_sat/(num_sat+num_unsat);
+    }
+
     bool is_maxlex(vector<soft> const & _ws) {
         vector<soft> ws(_ws);
         std::sort(ws.begin(), ws.end(), [&](soft const& s1, soft const& s2) { return s1.weight < s2.weight; });
@@ -41,6 +57,8 @@ namespace opt {
         return true;
     }
 
+
+
     class maxlex : public maxsmt_solver_base {
 
         struct cmp_soft {
@@ -51,6 +69,8 @@ namespace opt {
 
         ast_manager&    m;
         maxsat_context& m_c;
+        
+
         
         bool update_assignment() {
             model_ref mdl;
@@ -66,14 +86,17 @@ namespace opt {
         void assert_value(soft& soft) {
             switch (soft.value) {
             case l_true:
+                incr_sat();
                 s().assert_expr(soft.s);
                 break;
-            case l_false: 
+            case l_false:
+                incr_unsat();
                 s().assert_expr(expr_ref(m.mk_not(soft.s), m));
                 break;
             default:
                 break;
             }
+            //std::cout << "sat_unsat_ratio: " << get_sat_unsat_ratio() << std::endl;
         }
 
         void update_assignment(model_ref & mdl) {

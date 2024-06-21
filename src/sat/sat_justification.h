@@ -19,7 +19,6 @@ Revision History:
 #pragma once
 
 namespace sat {
-    
     class justification {
     public:
         enum kind { NONE = 0, BINARY = 1, TERNARY = 2, CLAUSE = 3, EXT_JUSTIFICATION = 4};
@@ -54,7 +53,6 @@ namespace sat {
         
         bool is_ext_justification() const { return m_val2 == EXT_JUSTIFICATION; }
         ext_justification_idx get_ext_justification_idx() const { return m_val1; }
-
     };
 
     inline std::ostream & operator<<(std::ostream & out, justification const & j) {

@@ -175,6 +175,7 @@ public:
         return e->get_data().m_value;
     }
 
+
     value const & operator[](key * k) const {
         return find(k);
     }

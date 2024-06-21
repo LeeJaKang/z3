@@ -19,6 +19,7 @@ Notes:
 
 
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <algorithm>
 #include <random>
@@ -188,32 +189,132 @@ public:
             (m.is_not(e, e) && is_uninterp_const(e));
     }
 
-    void display_stats() {
+    std::ostream& display_stats(std::ostream& out) const {
         sat::stats s = m_solver.get_stats();
-        std::cout << "m_mk_var: " << s.m_mk_var << std::endl;
-        std::cout << "m_mk_bin_clause: " << s.m_mk_bin_clause << std::endl;
-        std::cout << "m_mk_ter_clause: " << s.m_mk_ter_clause << std::endl;
-        std::cout << "m_mk_ter_learned: " << s.m_mk_ter_learned << std::endl;
-        std::cout << "m_mk_nary_clause: " << s.m_mk_clause << std::endl;
-        std::cout << "m_mk_nary_learned: " << s.m_mk_nary_learned << std::endl;
-        std::cout << "m_conflict: " << s.m_conflict << std::endl;
-        std::cout << "m_propagate: " << s.m_propagate << std::endl;
-        std::cout << "m_bin_propagate: " << s.m_bin_propagate << std::endl;
-        std::cout << "m_ter_propagate: " << s.m_ter_propagate << std::endl;
-        std::cout << "m_decision: " << s.m_decision << std::endl;
-        std::cout << "m_restart: " << s.m_restart << std::endl;
-        std::cout << "m_gc_clause: " << s.m_gc_clause << std::endl;
-        std::cout << "m_del_clause: " << s.m_del_clause << std::endl;
-        std::cout << "m_minimized_lits: " << s.m_minimized_lits << std::endl;
-        std::cout << "m_dyn_sub_res: " << s.m_dyn_sub_res << std::endl;
-        std::cout << "m_non_learned_generation: " << s.m_non_learned_generation << std::endl;
-        std::cout << "m_blocked_corr_sets: " << s.m_blocked_corr_sets << std::endl;
-        std::cout << "m_elim_var_res: " << s.m_elim_var_res << std::endl;
-        std::cout << "m_elim_var_bdd: " << s.m_elim_var_bdd << std::endl;
-        std::cout << "m_units: " << s.m_units << std::endl;
-        std::cout << "m_backtracks: " << s.m_backtracks << std::endl;
-        std::cout << "m_backjumps: " << s.m_backjumps << std::endl;
-        std::cout << std::endl;
+        out << "m_mk_var: " << s.m_mk_var << std::endl;
+        out << "m_mk_bin_clause: " << s.m_mk_bin_clause << std::endl;
+        out << "m_mk_ter_clause: " << s.m_mk_ter_clause << std::endl;
+        out << "m_mk_ter_learned: " << s.m_mk_ter_learned << std::endl;
+        out << "m_mk_nary_clause: " << s.m_mk_clause << std::endl;
+        out << "m_mk_nary_learned: " << s.m_mk_nary_learned << std::endl;
+        out << "m_conflict: " << s.m_conflict << std::endl;
+        out << "m_propagate: " << s.m_propagate << std::endl;
+        out << "m_bin_propagate: " << s.m_bin_propagate << std::endl;
+        out << "m_ter_propagate: " << s.m_ter_propagate << std::endl;
+        out << "m_decision: " << s.m_decision << std::endl;
+        out << "m_restart: " << s.m_restart << std::endl;
+        out << "m_gc_clause: " << s.m_gc_clause << std::endl;
+        out << "m_del_clause: " << s.m_del_clause << std::endl;
+        out << "m_minimized_lits: " << s.m_minimized_lits << std::endl;
+        out << "m_dyn_sub_res: " << s.m_dyn_sub_res << std::endl;
+        out << "m_non_learned_generation: " << s.m_non_learned_generation << std::endl;
+        out << "m_blocked_corr_sets: " << s.m_blocked_corr_sets << std::endl;
+        out << "m_elim_var_res: " << s.m_elim_var_res << std::endl;
+        out << "m_elim_var_bdd: " << s.m_elim_var_bdd << std::endl;
+        out << "m_units: " << s.m_units << std::endl;
+        out << "m_backtracks: " << s.m_backtracks << std::endl;
+        out << "m_backjumps: " << s.m_backjumps << std::endl;
+        out << std::endl;
+
+        return out;
+    }
+
+    void write_feat_file(std::string feat_file) {
+        sat::clause_vector& clauses = m_solver.clauses();
+        unsigned clauses_size = clauses.size();
+
+        if (feat_file != "") {
+            std::ofstream outfile(feat_file);
+            outfile << "order,id,size,literals" << std::endl;
+
+            for (int order = 0; order < clauses_size; order++) {
+                sat::clause* clause = clauses[order];
+            
+                unsigned int clause_size = clause->size();
+                unsigned int clause_id = clause->id();
+
+                outfile << order << ",";
+                outfile << clause_id << ",";
+                outfile << clause_size << ",";
+                for(auto& lit : *clause) {
+                    outfile << lit << " ";
+                }
+                outfile << std::endl;
+            }
+            outfile.close();
+        }
+    }
+
+    void sort_literals(sat::sort_selection sort_literals_method) {
+        if (sort_literals_method != sat::sort_selection::SS_NONE) {
+
+            sat::clause_vector& clauses = m_solver.clauses();
+            unsigned clauses_size = clauses.size();
+            std::unordered_map<sat::literal, double> lit_freq = m_solver.get_lit_freq();
+
+            auto sort_literal_size = [sort_literals_method, &lit_freq](sat::clause* clause) {
+                std::sort(clause->begin(), clause->end(), [sort_literals_method, &lit_freq](sat::literal lhs, sat::literal rhs) {
+                    if (sort_literals_method == sat::sort_selection::SS_ASCENDING)
+                        return lit_freq[lhs.unsign()] < lit_freq[rhs.unsign()];
+                    else if (sort_literals_method == sat::sort_selection::SS_DESCENDING)
+                        return lit_freq[lhs.unsign()] > lit_freq[rhs.unsign()];
+                    else
+                        return false;
+                });
+            };
+
+            for (int i = 0; i < clauses_size ; i++) {
+                sat::clause* clause = clauses[i];
+                sort_literal_size(const_cast<sat::clause*>(clause));
+            }
+        }
+    }
+
+    void sort_clauses(sat::sort_selection sort_clauses_method) {
+        if (sort_clauses_method != sat::sort_selection::SS_NONE) {
+            unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+            std::default_random_engine engine(seed);
+
+            std::uniform_int_distribution<int> distribution(0, 1);
+            sat::clause_vector& clauses = m_solver.clauses();
+            unsigned clauses_size = clauses.size();
+            std::unordered_map<sat::literal, double> lit_freq = m_solver.get_lit_freq();
+
+            auto compare_clause_size = [sort_clauses_method, &engine, &distribution, &lit_freq](const sat::clause* a, const sat::clause* b) {
+                double max_a = 0;
+                double max_b = 0;
+
+                for(auto& lit : *a) {
+                    double frequency = lit_freq[lit.unsign()];
+                    if (max_a < frequency)
+                        max_a = frequency;
+                }
+
+                for(auto& lit : *b) {
+                    double frequency = lit_freq[lit.unsign()];
+                    if (max_b < frequency)
+                        max_b = frequency;
+                }
+
+                if (sort_clauses_method == sat::sort_selection::SS_ASCENDING) {
+                    return max_a < max_b;
+                } else if (sort_clauses_method == sat::sort_selection::SS_DESCENDING) {
+                    return max_a > max_b;
+                } else {
+                    return false;
+                }
+            };
+
+            if (sort_clauses_method == sat::sort_selection::SS_RANDOM) {
+                for (int i = clauses_size - 1; i > 0; --i) {
+                    std::uniform_int_distribution<int> dist(0, i);
+                    int j = dist(engine);
+                    clauses.swap_elements(i, j);
+                }
+            } else {
+                std::sort(clauses.begin(), clauses.end(), compare_clause_size); // clauses를 정렬하기.
+            }
+        }
     }
 
     lbool check_sat_core(unsigned sz, expr * const * assumptions) override {
@@ -242,73 +343,40 @@ public:
 
         lbool r = internalize_formulas(); // m_fmls -> m_clauses
 
-        if (!m_first) {  
-            unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-            std::default_random_engine engine(seed);
+        // Custom Function
+        if (!m_first) {
             m_first = true;
 
-            sat::config config = m_solver.get_config();
-            sat::sort_selection sort_method = config.m_sort_clauses;
-            std::uniform_int_distribution<int> distribution(0, 1);
+            sat::sort_selection sort_literals_method = m_solver.get_config().m_sort_literals;
+            sat::sort_selection sort_clauses_method = m_solver.get_config().m_sort_clauses;
 
-
-            if (sort_method != sat::sort_selection::SC_NONE) {
-                auto compare_clause_size = [sort_method, &engine, &distribution](const sat::clause* a, const sat::clause* b) {
-                    if (sort_method == sat::sort_selection::SC_ASCENDING) {
-                        return a->size() < b->size(); // 오름차순
-                    } else if (sort_method == sat::sort_selection::SC_DESCENDING) {
-                        return a->size() > b->size(); // 내림차순
-                    } else if (sort_method == sat::sort_selection::SC_RANDOM) {
-                        return distribution(engine) == 0; // 랜덤
-                    } else {
-                        return false;
-                    }
-                };
+            sort_literals(sort_literals_method);
+            sort_clauses(sort_clauses_method);
             
-                sat::clause_vector& clauses = m_solver.clauses();
-                std::sort(clauses.begin(), clauses.end(), compare_clause_size); // clauses를 정렬하기.
-            }
+            if (m_solver.get_config().m_init_order)
+                m_solver.assign_init_weight();
+
+            if (m_solver.get_config().m_init_assign)
+                m_solver.init_phases();
+
+            //std::unordered_map<sat::literal, double> lit_freq = m_solver.get_lit_freq();
+            //for (sat::clause* clause : m_solver.clauses()) {
+            //    for (sat::literal literal : *clause) {
+            //        std::cout << literal << " (" << lit_freq[literal.unsign()] << "), ";
+            //    }
+            //    std::cout << std::endl;
+            //}
+
             // formula를 랜덤으로 바꾸기
             //for (int i = m_fmls.size() - 1; i > 0; --i) {
             //  expr_ref fml(m_fmls.get(i), m);
             //  std::cout << "Init fml: " << fml << std::endl;
             //  m_fmls.swap_elements(i, j);
             //}
-
-            // clause를 랜덤으로 바꾸기
-            //for (int i = clauses.size() - 1; i > 0; --i) {
-            //    std::uniform_int_distribution<int> dist(0, i);
-            //    int j = dist(engine);
-
-            //    sat::clause clause = *clauses[i];
-            //    
-            //    unsigned int clause_size = clause.size();
-            //    std::cout << i << "th Cluases size: " << clause_size << std::endl;
-            //    std::cout << "Cluases: " << clause << std::endl;
-            //    //for(auto& lit : clause) {  
-            //    //    std::cout << "literal: " << lit << std::endl;
-            //    //}
-            //    //std::cout << std::endl;
-
-            //    //clauses.swap_elements(i, j);
-            //}
-
-            // clauses 출력하기
-            //for (int i = 0; i < clauses.size() ; i++) {
-            //    sat::clause* clause = clauses[i];
-            //
-            //    unsigned int clause_size = clause->size();
-            //    std::cout << i << " th Cluases size: " << clause_size << std::endl;
-            //    std::cout << "clauses: " << *clause << std::endl;
-            //    for(auto& lit : *clause) {
-            //        std::cout << lit << " ";
-            //    }
-            //    std::cout << std::endl;
-            //    std::cout << std::endl;
-            //}
+            //write_feat_file(m_solver.get_config().m_feat_file);
         }
-        //lbool r = internalize_formulas(); // m_fmls -> m_clauses
-		//display_stats();
+        
+		//display_stats(std::cout);
 
         if (r != l_true) return r;
         r = internalize_assumptions(sz, _assumptions.data());

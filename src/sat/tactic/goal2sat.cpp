@@ -49,6 +49,9 @@ Notes:
 #include "sat/sat_params.hpp"
 #include<sstream>
 
+
+
+
 struct goal2sat::imp : public sat::sat_internalizer {
     struct frame {
         app *    m_t;
@@ -121,7 +124,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
     bool top_level_relevant() {
         return m_top_level && relevancy_enabled();
     }
-    
+
     void mk_clause(sat::literal l) {
         mk_clause(1, &l);
     }
@@ -141,12 +144,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
         if (relevancy_enabled())
             ensure_euf()->add_aux(n, lits);
 
-        for (unsigned i = 0; i < n; i++) {
-            sat::literal& lit = lits[i];
-            lit.incr_freq();
-            std::cout << &lit << " " << lit << " " << (unsigned) lit.get_freq() << std::endl;
-        }
-
+        m_solver.update_literal_info(n, lits);
         m_solver.add_clause(n, lits, mk_status());
     }
 
@@ -169,12 +167,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
         if (relevancy_enabled())
             ensure_euf()->add_root(n, lits);
 
-        for (unsigned i = 0; i < n; i++) {
-            sat::literal& lit = lits[i];
-            lit.incr_freq();
-            std::cout << &lit << " " << lit << " " << (unsigned) lit.get_freq() << std::endl;
-        }
-
+        m_solver.update_literal_info(n, lits);
         m_solver.add_clause(n, lits, m_is_redundant ? mk_status() : sat::status::input());
     }
 

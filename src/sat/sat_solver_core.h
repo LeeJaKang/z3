@@ -46,6 +46,7 @@ namespace sat {
         virtual void set_external(bool_var v) {}
         virtual void set_eliminated(bool_var v, bool f) {}
         virtual void set_phase(literal l) { }
+        virtual void init_phases() {}
 
         // optional support for user-scopes. Not relevant for sat_tactic integration. 
         // it is only relevant for incremental mode SAT, which isn't wrapped (yet)
@@ -53,7 +54,7 @@ namespace sat {
         virtual void user_pop(unsigned num_scopes) {};
         virtual unsigned num_user_scopes() const { return 0;}
         virtual unsigned num_scopes() const { return 0; }
-
+        virtual void update_literal_info(unsigned n, literal* lits) = 0;
 
         // hooks for extension solver. really just ba_solver atm.
         virtual extension* get_extension() const { return nullptr; }

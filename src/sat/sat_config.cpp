@@ -38,16 +38,26 @@ namespace sat {
 
         symbol a = p.sort_clauses();
         if (a == symbol("random"))
-            m_sort_clauses = SC_RANDOM;
+            m_sort_clauses = SS_RANDOM;
         else if (a == symbol("ascending"))
-            m_sort_clauses = SC_ASCENDING;        
+            m_sort_clauses = SS_ASCENDING;        
         else if (a == symbol("descending"))
-            m_sort_clauses = SC_DESCENDING; 
+            m_sort_clauses = SS_DESCENDING; 
         else if (a == symbol("none"))
-            m_sort_clauses = SC_NONE;
+            m_sort_clauses = SS_NONE;
         else
             throw sat_param_exception("invalid sort_clauses parameters");
         
+        symbol b = p.sort_literals();
+        if (b == symbol("ascending"))
+            m_sort_literals = SS_ASCENDING;        
+        else if (b == symbol("descending"))
+            m_sort_literals = SS_DESCENDING; 
+        else if (b == symbol("none"))
+            m_sort_literals = SS_NONE;
+        else
+            throw sat_param_exception("invalid sort_literals parameters");
+
         symbol s = p.restart();
         if (s == symbol("luby"))
             m_restart = RS_LUBY;
@@ -80,6 +90,9 @@ namespace sat {
         else
             throw sat_param_exception("invalid phase selection strategy: always_false, always_true, basic_caching, caching, random");
 
+        m_init_assign = p.init_assign();
+        m_init_order = p.init_order();
+        m_feat_file = p.feat_file();
         m_rephase_base      = p.rephase_base();
         m_reorder_base      = p.reorder_base();
         m_reorder_itau      = p.reorder_itau();

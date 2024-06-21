@@ -38,7 +38,6 @@ namespace sat {
     */
     class literal {
         unsigned m_val;
-        unsigned m_frequency;
     public:
         literal():m_val(null_bool_var << 1) {
             SASSERT(var() == null_bool_var && !sign());
@@ -54,15 +53,7 @@ namespace sat {
         bool_var var() const {
             return m_val >> 1;
         }
-
-        void incr_freq() {
-            m_frequency++;
-        }
-
-        unsigned get_freq() {
-            return m_frequency;
-        }
-
+        
         bool sign() const {
             return m_val & 1ul;
         }
@@ -92,6 +83,7 @@ namespace sat {
 
         friend literal to_literal(unsigned x);
         friend bool operator<(literal const & l1, literal const & l2);
+        friend bool operator>(literal const & l1, literal const & l2);
         friend bool operator==(literal const & l1, literal const & l2);
         friend bool operator!=(literal const & l1, literal const & l2);
     };
@@ -101,6 +93,7 @@ namespace sat {
 
     inline literal to_literal(unsigned x) { literal l; l.m_val = x; return l; }
     inline bool operator<(literal const & l1, literal const & l2) { return l1.m_val < l2.m_val;  }
+    inline bool operator>(literal const & l1, literal const & l2) { return l1.m_val > l2.m_val;  }
     inline bool operator==(literal const & l1, literal const & l2) { return l1.m_val == l2.m_val; }
     inline bool operator!=(literal const & l1, literal const & l2) { return l1.m_val != l2.m_val; }
 
